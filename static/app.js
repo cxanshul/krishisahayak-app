@@ -1,0 +1,830 @@
+let currentLang = 'en';
+let activeFarmerPhone = "9876543210";
+let produceBatches = [];
+let mandiRecordsCache = [];
+let selectedImageBase64 = null;
+let chatImageBase64 = null;
+let isLiveVoiceActive = false;
+let isRecognizing = false;
+let voiceDebounceTimer = null; // New timer to wait before sending
+
+const translations = {
+    en: {
+        analyzing: "⏳ Running Gemini Quality & Spoilage AI...",
+        analyzeBtn: "Analyze Quality and Predict Spoilage",
+        settleBtn: "Confirm Sale, Settle Financials & Archive to History",
+        settling: "⏳ Finalizing Financial Settlement & Generating Next Crop Plan...",
+        customCostPrompt: "Enter Custom Cost Name (e.g., Cold Truck Transport, Sacking):",
+        toastSaved: "Produce Batch registered and diagnosed successfully!",
+        toastSettled: "Produce sold, profit calculated, and archived!",
+        toastError: "Encountered an issue. Processed via fallback rules.",
+        voiceListening: "Listening... speak now",
+        voiceActive: "Live Voice On",
+        voiceChatStatus: "Voice Chat",
+        voiceNotSupported: "Speech recognition is not supported in this browser. Please use Chrome/Edge.",
+        micBlocked: "Microphone permission was denied. Please allow microphone access in browser settings.",
+        voiceError: "Voice input failed. Please try again or type your message."
+    },
+    hi: {
+        analyzing: "⏳ जेमिनी एआई द्वारा गुणवत्ता व सड़न जांच जारी है...",
+        analyzeBtn: "गुणवत्ता जांचें एवं सड़न का अनुमान लगाएं",
+        settleBtn: "बिक्री पक्की करें, मुनाफा निकालें एवं इतिहास में दर्ज करें",
+        settling: "⏳ वित्तीय गणना एवं अगली फसल सुझाव तैयार किए जा रहे हैं...",
+        customCostPrompt: "अतिरिक्त खर्च का नाम लिखें (उदा. कोल्ड वैन किराया, विशेष पैकिंग):",
+        toastSaved: "उपज बैच सफलतापूर्वक पंजीकृत और विश्लेषित हुआ!",
+        toastSettled: "बिक्री पूर्ण! शुद्ध लाभ दर्ज हुआ और अगली फसल का सुझाव तैयार है।",
+        toastError: "त्रुटि हुई। ऑफलाइन मोड में सुरक्षित किया गया।",
+        voiceListening: "सुन रहे हैं... कृपया बोलें",
+        voiceActive: "लाइव आवाज चालू",
+        voiceChatStatus: "आवाज संवाद",
+        voiceNotSupported: "इस ब्राउज़र में आवाज पहचान उपलब्ध नहीं है। कृपया Chrome का उपयोग करें।",
+        micBlocked: "माइक्रोफ़ोन अनुमति नहीं मिली। कृपया ब्राउज़र सेटिंग में अनुमति दें।",
+        voiceError: "आवाज पहचान में त्रुटि हुई। कृपया पुनः प्रयास करें।"
+    }
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const h = document.getElementById("harvest_date");
+        const s = document.getElementById("selling_date");
+        if (h) h.value = today;
+        if (s) s.value = today;
+    } catch (e) {}
+
+    loadBatches();
+    fetchMandiRates();
+    handlePreCostCalculation();
+});
+
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+
+    const target = document.getElementById(`tab-${tabId}`);
+    if (target) target.classList.add('active');
+
+    document.querySelectorAll('.nav-item').forEach(btn => {
+        const attr = btn.getAttribute('onclick') || '';
+        if (attr.includes(`switchTab('${tabId}')`)) {
+            btn.classList.add('active');
+        }
+    });
+}
+
+function showToast(msg, type = "info") {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    toast.innerText = msg;
+    container.appendChild(toast);
+    setTimeout(() => {
+        if (toast && toast.parentNode) toast.remove();
+    }, 3500);
+}
+
+function setLanguage(lang) {
+    currentLang = lang;
+    const btnEn = document.getElementById('btn-en');
+    const btnHi = document.getElementById('btn-hi');
+    if (btnEn) btnEn.classList.toggle('active', lang === 'en');
+    if (btnHi) btnHi.classList.toggle('active', lang === 'hi');
+
+    document.querySelectorAll('[data-en]').forEach(el => {
+        const text = el.getAttribute(`data-${lang}`);
+        if (text) el.textContent = text;
+    });
+
+    const chatLangIndicator = document.getElementById("chat-lang-indicator");
+    if (chatLangIndicator) {
+        chatLangIndicator.innerText = (currentLang === 'hi') ? 'EN' : 'HI';
+    }
+
+    renderAllViews();
+    handlePreCostCalculation();
+}
+
+function toggleChatLanguage() {
+    const nextLang = (currentLang === 'en') ? 'hi' : 'en';
+    setLanguage(nextLang);
+    showToast(nextLang === 'hi' ? 'चैट भाषा हिंदी में बदली गई।' : 'Chat language switched to English.', 'info');
+}
+
+async function loadBatches() {
+    try {
+        const res = await fetch(`/api/produce/list?phone=${activeFarmerPhone}`);
+        const data = await res.json();
+        produceBatches = data.batches || [];
+    } catch (e) {
+        console.warn("Offline batch fallback active");
+    }
+    renderAllViews();
+}
+
+function renderAllViews() {
+    renderStoredProduce();
+    populateSettlementDropdown();
+    renderHistoryProduce();
+    updateTallyStrip();
+}
+
+function updateTallyStrip() {
+    let activeQty = 0;
+    let highRiskCount = 0;
+    let totalRevenue = 0;
+    let totalProfit = 0;
+
+    produceBatches.forEach(b => {
+        if (b.status === "active") {
+            activeQty += parseFloat(b.quantity_kg) || 0;
+            if (b.spoilage_risk === "High") highRiskCount++;
+        } else if (b.status === "sold") {
+            totalRevenue += parseFloat(b.total_revenue) || 0;
+            totalProfit += parseFloat(b.net_profit_loss) || 0;
+        }
+    });
+
+    const statActive = document.getElementById("stat-active-qty");
+    const statRisk = document.getElementById("stat-high-risk");
+    const statRev = document.getElementById("stat-total-revenue");
+    const statProfit = document.getElementById("stat-total-profit");
+
+    if (statActive) statActive.innerHTML = `${activeQty.toLocaleString()} <small>KG</small>`;
+    if (statRisk) statRisk.innerHTML = `${highRiskCount} <small>${currentLang === 'hi' ? 'बैच' : 'BATCH'}</small>`;
+    if (statRev) statRev.innerText = `₹ ${totalRevenue.toLocaleString()}`;
+    if (statProfit) statProfit.innerText = `₹ ${totalProfit.toLocaleString()}`;
+}
+
+// ============================================================
+// PRE-COST CALCULATOR LOGIC
+// ============================================================
+
+async function handlePreCostCalculation(e) {
+    if (e && e.preventDefault) e.preventDefault();
+
+    const crop = document.getElementById("calc_crop")?.value || "Wheat";
+    const area = parseFloat(document.getElementById("calc_area")?.value) || 1.0;
+    const unit = document.getElementById("calc_area_unit")?.value || "Acre";
+    const customYield = parseFloat(document.getElementById("calc_custom_yield")?.value) || 0;
+
+    const payload = {
+        crop_name: crop,
+        land_area: area,
+        area_unit: unit,
+        cost_seeds: parseFloat(document.getElementById("calc_seed")?.value) || 0,
+        cost_fertilizer: parseFloat(document.getElementById("calc_fert")?.value) || 0,
+        cost_pesticide: parseFloat(document.getElementById("calc_pest")?.value) || 0,
+        cost_irrigation: parseFloat(document.getElementById("calc_irrig")?.value) || 0,
+        cost_labor: parseFloat(document.getElementById("calc_labour")?.value) || 0,
+        cost_machinery: parseFloat(document.getElementById("calc_mach")?.value) || 0,
+        cost_fuel: parseFloat(document.getElementById("calc_fuel")?.value) || 0,
+        cost_misc: parseFloat(document.getElementById("calc_misc")?.value) || 0,
+        custom_yield_kg: customYield
+    };
+
+    try {
+        const res = await fetch("/api/calculator/pre-cost", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+
+        if (d.success) {
+            document.getElementById("res-total-cost").innerText = `₹ ${d.total_production_cost.toLocaleString()}`;
+            document.getElementById("res-yield").innerText = `${d.expected_yield_kg.toLocaleString()} KG (${d.expected_yield_quintals} Qt)`;
+            document.getElementById("res-rate").innerHTML = `₹ ${d.mandi_modal_price_per_quintal.toLocaleString()} / Qt <small id="res-rate-date">(${d.rate_date})</small>`;
+            document.getElementById("res-revenue").innerText = `₹ ${d.estimated_revenue.toLocaleString()}`;
+
+            const profitEl = document.getElementById("res-net-profit");
+            const profitVal = d.expected_profit_loss;
+            profitEl.innerText = `${profitVal >= 0 ? '+' : '-'} ₹ ${Math.abs(profitVal).toLocaleString()}`;
+            profitEl.className = `res-val ${profitVal >= 0 ? 'text-green' : 'text-risk'}`;
+
+            const unitEl = document.getElementById("res-profit-unit");
+            unitEl.innerText = `${d.profit_per_selected_unit >= 0 ? '+' : '-'} ₹ ${Math.abs(d.profit_per_selected_unit).toLocaleString()} / ${unit}`;
+        }
+    } catch (err) {
+        console.error("Calculator error:", err);
+    }
+}
+
+function autoFetchMandiBenchmark() {
+    handlePreCostCalculation();
+}
+
+// ============================================================
+// MANDI DATA LOGIC
+// ============================================================
+
+async function fetchMandiRates() {
+    const tbody = document.getElementById("mandi-tbody");
+    const alertBox = document.getElementById("mandi-alert-box");
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 24px;">⏳ Loading real-time market data across APMC Mandis...</td></tr>`;
+
+    try {
+        const res = await fetch("/api/market/mandi-rates");
+        const data = await res.json();
+        mandiRecordsCache = data.records || [];
+
+        if (alertBox) {
+            if (data.source === "live_datagov") {
+                alertBox.className = "mandi-alert live";
+                alertBox.innerText = "🟢 Displaying verified live APMC government mandi arrivals.";
+            } else {
+                alertBox.className = "mandi-alert fallback";
+                alertBox.innerText = "🟡 Government live API is currently busy. Displaying verified latest recorded benchmark mandi rates.";
+            }
+            alertBox.classList.remove("hidden");
+        }
+
+        renderMandiTable(mandiRecordsCache);
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="color:var(--risk-red); text-align:center;">Failed to load mandi data. Please refresh.</td></tr>`;
+    }
+}
+
+function renderMandiTable(records) {
+    const tbody = document.getElementById("mandi-tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+
+    if (records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 20px; color: var(--text-muted);">${currentLang === 'hi' ? 'इस फिल्टर के लिए कोई मंडी भाव नहीं मिला।' : 'No mandi records found matching criteria.'}</td></tr>`;
+        return;
+    }
+
+    records.forEach(r => {
+        const isToday = r.is_today;
+        const statusBadge = isToday
+            ? `<span class="badge-live">🟢 Today's Rate (${r.arrival_date})</span>`
+            : `<span class="badge-latest">📅 Rate Date: ${r.arrival_date}</span>`;
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td><strong>${r.state}</strong><br><small style="color:var(--text-muted);">${r.district || '-'}</small></td>
+            <td><strong>${r.market}</strong></td>
+            <td>${r.commodity} <small style="color:var(--text-muted);">(${r.variety || 'Desi'})</small></td>
+            <td>₹ ${r.min_price}</td>
+            <td>₹ ${r.max_price}</td>
+            <td><strong style="color: var(--leaf-green); font-size:14px;">₹ ${r.modal_price}</strong></td>
+            <td>${statusBadge}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function filterMandi() {
+    const crop = document.getElementById("mandi-search-crop")?.value.toLowerCase().trim() || "";
+    const state = document.getElementById("mandi-filter-state")?.value.toLowerCase().trim() || "";
+    const market = document.getElementById("mandi-search-market")?.value.toLowerCase().trim() || "";
+
+    const filtered = mandiRecordsCache.filter(r => {
+        const matchCrop = !crop || r.commodity.toLowerCase().includes(crop);
+        const matchState = !state || r.state.toLowerCase().includes(state);
+        const matchMarket = !market || r.market.toLowerCase().includes(market) || (r.district && r.district.toLowerCase().includes(market));
+        return matchCrop && matchState && matchMarket;
+    });
+
+    renderMandiTable(filtered);
+}
+
+// ============================================================
+// BATCHES & STORED PRODUCE
+// ============================================================
+
+function renderStoredProduce() {
+    const container = document.getElementById("stored-batches-list");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const activeList = produceBatches.filter(b => b.status === "active");
+    const storedCount = document.getElementById("stored-count");
+    if (storedCount) storedCount.innerText = `${activeList.length} ${currentLang === 'hi' ? 'बैच' : 'Batches'}`;
+
+    if (activeList.length === 0) {
+        container.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 14px;">${currentLang === 'hi' ? 'कोई सक्रिय भंडारित फसल नहीं है।' : 'No active stored produce batches.'}</div>`;
+        return;
+    }
+
+    activeList.forEach(b => {
+        const riskClass = b.spoilage_risk === "High" ? "risk-high" : (b.spoilage_risk === "Medium" ? "risk-medium" : "risk-low");
+        const card = document.createElement("div");
+        card.className = `batch-card ${riskClass}`;
+        card.innerHTML = `
+            <div>
+                <span class="crop-title">${b.crop_name}</span>
+                <small style="display: block; color: var(--text-muted);">${b.variety || ''} | ${b.field_name || ''}</small>
+                <span class="detail-lbl" style="margin-top: 4px;">${b.storage_type}</span>
+            </div>
+            <div>
+                <span class="detail-lbl">${currentLang === 'hi' ? 'भंडारित मात्रा' : 'Stored Volume'}</span>
+                <span class="detail-val">${parseFloat(b.quantity_kg).toLocaleString()} KG</span>
+                <small style="color: var(--text-muted);">Grade: <strong>${b.quality_grade || 'A'}</strong></small>
+            </div>
+            <div>
+                <span class="detail-lbl">${currentLang === 'hi' ? 'सड़न जोखिम' : 'Spoilage Risk'}</span>
+                <span class="detail-val text-${b.spoilage_risk === 'High' ? 'risk' : 'green'}">
+                    ${b.spoilage_risk} (${b.shelf_life_days} ${currentLang === 'hi' ? 'दिन शेष' : 'Days'})
+                </span>
+                <small style="display:block; font-size:11px; color:var(--text-muted);">${b.defect_summary || ''}</small>
+            </div>
+            <div class="batch-advisory">
+                <strong>💡 ${currentLang === 'hi' ? 'भंडारण निर्देश' : 'Storage'}:</strong> ${b.recommendation}<br>
+                <strong>⚙️ ${currentLang === 'hi' ? 'प्रसंस्करण' : 'Processing'}:</strong> ${b.processing_idea}
+            </div>
+            <div>
+                <button type="button" class="btn-secondary" onclick="openSettlementForBatch('${b.id}')">
+                    ${currentLang === 'hi' ? 'बिक्री दर्ज करें ➔' : 'Settle Sale ➔'}
+                </button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function populateSettlementDropdown() {
+    const select = document.getElementById("settle_batch_id");
+    if (!select) return;
+    select.innerHTML = `<option value="">-- ${currentLang === 'hi' ? 'सक्रिय बैच चुनें' : 'Select Active Batch'} --</option>`;
+    
+    const activeList = produceBatches.filter(b => b.status === "active");
+    activeList.forEach(b => {
+        select.innerHTML += `<option value="${b.id}">${b.crop_name} (${b.variety}) - ${b.quantity_kg} KG in ${b.field_name}</option>`;
+    });
+}
+
+function openSettlementForBatch(batchId) {
+    switchTab('ledger-sold');
+    const select = document.getElementById("settle_batch_id");
+    if (select) {
+        select.value = batchId;
+        handleSettleBatchChange();
+    }
+}
+
+function handleSettleBatchChange() {
+    const select = document.getElementById("settle_batch_id");
+    if (!select) return;
+    const batchId = select.value;
+    const batch = produceBatches.find(b => b.id === batchId);
+    const qtyInput = document.getElementById("sold_quantity_kg");
+    if (batch && qtyInput) {
+        qtyInput.value = batch.quantity_kg;
+    }
+}
+
+function renderHistoryProduce() {
+    const container = document.getElementById("history-batches-list");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const soldList = produceBatches.filter(b => b.status === "sold");
+    const histCount = document.getElementById("history-count");
+    if (histCount) histCount.innerText = `${soldList.length} ${currentLang === 'hi' ? 'रिकॉर्ड' : 'Records'}`;
+
+    if (soldList.length === 0) {
+        container.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 14px;">${currentLang === 'hi' ? 'कोई पुराना बिक्री रिकॉर्ड उपलब्ध नहीं है।' : 'No completed sales history recorded yet.'}</div>`;
+        return;
+    }
+
+    soldList.forEach(b => {
+        const isProfit = (b.net_profit_loss >= 0);
+        const card = document.createElement("div");
+        card.className = "history-card";
+        
+        let rotationHtml = "";
+        if (b.next_crop_recommendation && b.next_crop_recommendation.length > 0) {
+            rotationHtml = `
+                <div class="next-crop-container">
+                    <div class="next-crop-title">🌱 ${currentLang === 'hi' ? 'एआई अगली फसल सुझाव (भूमि एवं मौसम अनुसार):' : 'AI Next Crop Recommendations for this Field:'}</div>
+                    <div class="next-crop-items">
+                        ${b.next_crop_recommendation.map(rec => `
+                            <div class="crop-plan-item">
+                                <strong>${rec.crop}</strong> <small style="color:var(--turmeric-dark);">[ROI: ${rec.roi_potential} | Water: ${rec.water_need}]</small>
+                                <p style="margin-top:4px; font-size:11.5px; color:var(--text-muted);">${rec.reason}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        card.innerHTML = `
+            <div class="history-card-header">
+                <div>
+                    <h4>${b.crop_name} <small>(${b.variety || 'Desi'})</small></h4>
+                    <span style="font-size:12px; color:var(--text-muted);">${b.field_name} | Harvest: ${b.harvest_date} ➔ Sold: ${b.selling_date}</span>
+                </div>
+                <div>
+                    <span style="font-size:16px; font-weight:700; color: ${isProfit ? 'var(--leaf-green)' : 'var(--risk-red)'};">
+                        ${isProfit ? 'PROFIT' : 'LOSS'}: ₹ ${Math.abs(b.net_profit_loss).toLocaleString()}
+                    </span>
+                </div>
+            </div>
+
+            <div class="history-financial-grid">
+                <div>
+                    <span class="detail-lbl">${currentLang === 'hi' ? 'उत्पादित / बेची मात्रा' : 'Qty Produced / Sold'}</span>
+                    <span class="detail-val">${b.quantity_kg} / ${b.sold_quantity_kg} KG</span>
+                </div>
+                <div>
+                    <span class="detail-lbl">${currentLang === 'hi' ? 'विक्रय मूल्य' : 'Selling Price'}</span>
+                    <span class="detail-val">₹ ${b.selling_price_per_kg} / KG</span>
+                </div>
+                <div>
+                    <span class="detail-lbl">${currentLang === 'hi' ? 'कुल आय (Revenue)' : 'Total Revenue'}</span>
+                    <span class="detail-val text-green">₹ ${b.total_revenue.toLocaleString()}</span>
+                </div>
+                <div>
+                    <span class="detail-lbl">${currentLang === 'hi' ? 'कुल लागत (Combined)' : 'Total Cost'}</span>
+                    <span class="detail-val">₹ ${b.total_combined_cost.toLocaleString()}</span>
+                </div>
+            </div>
+            ${rotationHtml}
+        `;
+        container.appendChild(card);
+    });
+}
+
+async function handleSaleSettlement(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const btn = document.getElementById("btn-settle-sale");
+    if (btn) {
+        btn.innerText = translations[currentLang].settling;
+        btn.disabled = true;
+    }
+
+    const sellingCosts = {};
+    document.querySelectorAll(".selling-cost-val").forEach(input => {
+        const cat = input.getAttribute("data-cat") || "misc";
+        sellingCosts[cat] = parseFloat(input.value) || 0;
+    });
+
+    const payload = {
+        batch_id: document.getElementById("settle_batch_id").value,
+        sold_quantity_kg: document.getElementById("sold_quantity_kg").value,
+        selling_price_per_kg: document.getElementById("selling_price_per_kg").value,
+        selling_date: document.getElementById("selling_date").value,
+        selling_costs: sellingCosts
+    };
+
+    try {
+        const res = await fetch("/api/produce/settle-sale", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        if (result.success) {
+            const idx = produceBatches.findIndex(b => b.id === result.batch.id);
+            if (idx !== -1) produceBatches[idx] = result.batch;
+            renderAllViews();
+            showToast(translations[currentLang].toastSettled, "success");
+            switchTab('ledger-history');
+        } else {
+            showToast(translations[currentLang].toastError, "error");
+        }
+    } catch (e) {
+        showToast(translations[currentLang].toastError, "error");
+    } finally {
+        if (btn) {
+            btn.innerText = translations[currentLang].settleBtn;
+            btn.disabled = false;
+        }
+    }
+}
+
+function addCustomSellingCost() {
+    const name = prompt(translations[currentLang].customCostPrompt);
+    if (name && name.trim()) {
+        const container = document.getElementById("selling-costs-container");
+        if (!container) return;
+        const item = document.createElement("div");
+        item.className = "cost-item";
+        item.innerHTML = `
+            <label>${name.trim()} (₹)</label>
+            <input type="number" class="selling-cost-val" data-cat="${name.toLowerCase().replace(/\s+/g, '_')}" placeholder="0" value="0">
+        `;
+        container.appendChild(item);
+    }
+}
+
+function handleImageSelected(e) {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            selectedImageBase64 = evt.target.result;
+            const preview = document.getElementById("preview-img");
+            const wrapper = document.getElementById("image-preview-wrapper");
+            if (preview) preview.src = selectedImageBase64;
+            if (wrapper) wrapper.classList.remove("hidden");
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function removeImage() {
+    selectedImageBase64 = null;
+    const input = document.getElementById("crop_image");
+    const wrapper = document.getElementById("image-preview-wrapper");
+    const preview = document.getElementById("preview-img");
+    if (input) input.value = "";
+    if (wrapper) wrapper.classList.add("hidden");
+    if (preview) preview.src = "";
+}
+
+function triggerFileInput() {
+    const input = document.getElementById("crop_image");
+    if (input) input.click();
+}
+
+async function handleProduceSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const btn = document.getElementById("btn-submit-produce");
+    const label = document.getElementById("submit-text");
+    if (label) label.innerText = translations[currentLang].analyzing;
+    if (btn) btn.disabled = true;
+
+    const prodCosts = {};
+    document.querySelectorAll(".prod-cost-val").forEach(input => {
+        const cat = input.getAttribute("data-cat") || "misc";
+        prodCosts[cat] = parseFloat(input.value) || 0;
+    });
+
+    const payload = {
+        phone: activeFarmerPhone,
+        crop_name: document.getElementById("crop_name").value,
+        variety: document.getElementById("crop_variety").value,
+        field_name: document.getElementById("field_name").value,
+        quantity: document.getElementById("quantity").value,
+        unit: document.getElementById("weight_unit").value,
+        harvest_date: document.getElementById("harvest_date").value,
+        storage_type: document.getElementById("storage_type").value,
+        image_base64: selectedImageBase64,
+        production_costs: prodCosts
+    };
+
+    try {
+        const res = await fetch("/api/produce/analyze-and-add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+
+        if (result.success) {
+            produceBatches.unshift(result.batch);
+            renderAllViews();
+            document.getElementById("produce-form").reset();
+            removeImage();
+            showToast(translations[currentLang].toastSaved, "success");
+            switchTab('ledger-stored');
+        } else {
+            showToast(translations[currentLang].toastError, "error");
+        }
+    } catch (e) {
+        showToast(translations[currentLang].toastError, "error");
+    } finally {
+        if (label) label.innerText = translations[currentLang].analyzeBtn;
+        if (btn) btn.disabled = false;
+    }
+}
+
+function fillDemoBatch() {
+    const crop = document.getElementById("crop_name");
+    const variety = document.getElementById("crop_variety");
+    const field = document.getElementById("field_name");
+    const qty = document.getElementById("quantity");
+    const unit = document.getElementById("weight_unit");
+    const storage = document.getElementById("storage_type");
+
+    if (crop) crop.value = "Tomato";
+    if (variety) variety.value = "Hybrid Red";
+    if (field) field.value = "South Polyhouse Plot 1";
+    if (qty) qty.value = "1500";
+    if (unit) unit.value = "kg";
+    if (storage) storage.value = "Open Air Jute Bags";
+    
+    switchTab('add-batch');
+}
+
+// ============================================================
+// CHAT & VOICE ENGINE (REFINED WAIT & DEBOUNCE LOGIC)
+// ============================================================
+
+function toggleAssistant() {
+    const panel = document.getElementById("assistant-panel");
+    if (panel) panel.classList.toggle("open");
+}
+
+function handleAssistantKey(e) {
+    if (e.key === "Enter") sendAssistantMessage();
+}
+
+function handleChatImageUpload(e) {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            chatImageBase64 = evt.target.result;
+            const thumb = document.getElementById("chat-img-thumb");
+            const preview = document.getElementById("chat-media-preview");
+            if (thumb) thumb.src = chatImageBase64;
+            if (preview) preview.classList.remove("hidden");
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function removeChatMedia() {
+    chatImageBase64 = null;
+    const fileInput = document.getElementById("chat-file-input");
+    const preview = document.getElementById("chat-media-preview");
+    if (fileInput) fileInput.value = "";
+    if (preview) preview.classList.add("hidden");
+}
+
+let globalRecognizer = null;
+
+function stopRecording() {
+    if (globalRecognizer && isRecognizing) {
+        try {
+            globalRecognizer.stop();
+        } catch (e) {}
+        isRecognizing = false;
+    }
+}
+
+function recordAudioMessage() {
+    if (isRecognizing) return;
+    
+    if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        return; 
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast(translations[currentLang].voiceNotSupported, "error");
+        return;
+    }
+
+    try {
+        globalRecognizer = new SpeechRecognition();
+        globalRecognizer.lang = (currentLang === 'hi') ? 'hi-IN' : 'en-IN';
+        globalRecognizer.interimResults = false;
+        
+        // If Live Voice is ON, keep mic continuous to build the sentence naturally
+        globalRecognizer.continuous = isLiveVoiceActive; 
+
+        const input = document.getElementById("assistant-query");
+        const micBtn = document.getElementById("btn-mic-input");
+
+        globalRecognizer.onstart = function() {
+            isRecognizing = true;
+            if (micBtn) micBtn.style.backgroundColor = "#FCD7D7";
+            if (input) input.placeholder = translations[currentLang].voiceListening;
+        };
+
+        globalRecognizer.onresult = function(event) {
+            // Rebuild the final transcript cleanly from all segments
+            let finalTranscript = '';
+            for (let i = 0; i < event.results.length; i++) {
+                finalTranscript += event.results[i][0].transcript + " ";
+            }
+            
+            if (input) {
+                input.value = finalTranscript.trim();
+            }
+            
+            // Only auto-send if Live Voice is ON
+            if (isLiveVoiceActive) {
+                clearTimeout(voiceDebounceTimer);
+                voiceDebounceTimer = setTimeout(() => {
+                    sendAssistantMessage();
+                }, 1500); // 1.5 seconds of pure silence triggers the send
+            }
+            // If Live Voice is OFF, the user must click the 'Send' button manually
+        };
+
+        globalRecognizer.onerror = function(event) {
+            console.error("Speech Recognition Error:", event.error);
+            if (event.error === 'not-allowed') {
+                showToast(translations[currentLang].micBlocked, "error");
+            }
+        };
+
+        globalRecognizer.onend = function() {
+            isRecognizing = false;
+            if (micBtn) micBtn.style.backgroundColor = "";
+            if (input) input.placeholder = (currentLang === 'hi') ? "यहाँ लिखें या प्रश्न पूछें..." : "Type or ask a farming question...";
+        };
+
+        globalRecognizer.start();
+    } catch (err) {
+        console.error("Recognizer start exception:", err);
+        isRecognizing = false;
+    }
+}
+
+function toggleLiveVoiceConversation() {
+    isLiveVoiceActive = !isLiveVoiceActive;
+    const btn = document.getElementById("btn-live-voice");
+    const statusText = document.getElementById("voice-chat-status");
+    if (btn) btn.classList.toggle("active", isLiveVoiceActive);
+
+    if (isLiveVoiceActive) {
+        if (statusText) statusText.innerText = translations[currentLang].voiceActive;
+        speakAssistantResponse(currentLang === 'hi' ? "लाइव आवाज चालू है। बोलिए, मैं सुन रहा हूँ।" : "Live voice active. Please ask your farming question.");
+    } else {
+        if (statusText) statusText.innerText = translations[currentLang].voiceChatStatus;
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        stopRecording();
+        clearTimeout(voiceDebounceTimer);
+    }
+}
+
+function speakAssistantResponse(text) {
+    if (!('speechSynthesis' in window)) return;
+    
+    stopRecording(); 
+    window.speechSynthesis.cancel();
+
+    const cleanText = text.replace(/[*_#`]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = (currentLang === 'hi') ? 'hi-IN' : 'en-IN';
+    utterance.rate = 1.0;
+
+    utterance.onend = function() {
+        if (isLiveVoiceActive) {
+            setTimeout(() => recordAudioMessage(), 800); 
+        }
+    };
+
+    window.speechSynthesis.speak(utterance);
+}
+
+async function sendAssistantMessage() {
+    clearTimeout(voiceDebounceTimer);
+    stopRecording(); 
+
+    const input = document.getElementById("assistant-query");
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text && !chatImageBase64) return;
+
+    const chatBody = document.getElementById("chat-messages");
+    if (!chatBody) return;
+
+    const userBubble = document.createElement("div");
+    userBubble.className = "user-msg";
+    userBubble.innerHTML = text ? text : `<em>[Photo Attached for AI Diagnosis]</em>`;
+    chatBody.appendChild(userBubble);
+    
+    // Clear the input box instantly so it doesn't double-send
+    input.value = "";
+    chatBody.scrollTop = chatBody.scrollHeight;
+
+    const botBubble = document.createElement("div");
+    botBubble.className = "bot-msg";
+    botBubble.innerText = (currentLang === 'hi') ? "कृषि डेटा का विश्लेषण हो रहा है..." : "Analyzing crop data & financial benchmarks...";
+    chatBody.appendChild(botBubble);
+    chatBody.scrollTop = chatBody.scrollHeight;
+
+    const payload = {
+        message: text,
+        image_base64: chatImageBase64,
+        lang: currentLang
+    };
+    removeChatMedia();
+
+    try {
+        const res = await fetch("/api/assistant/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        botBubble.innerText = data.reply;
+        
+        if (data.updated_batches) {
+            produceBatches = data.updated_batches;
+            renderAllViews();
+        }
+
+        if (isLiveVoiceActive) {
+            speakAssistantResponse(data.reply);
+        }
+    } catch (e) {
+        botBubble.innerText = (currentLang === 'hi') ? "AI सर्वर से संपर्क नहीं हो सका। कृपया पुनः प्रयास करें।" : "Could not connect to Krishi AI. Please retry.";
+        if (isLiveVoiceActive) {
+            setTimeout(() => recordAudioMessage(), 1000); 
+        }
+    }
+    chatBody.scrollTop = chatBody.scrollHeight;
+}

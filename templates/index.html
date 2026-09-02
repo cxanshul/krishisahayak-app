@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HackBhoomi - Krishi Ledger, Pre-Cost Calculator & Agritech Advisory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <aside class="sidebar">
+        <div class="brand">
+            <h1 class="logo">HACKBHOOMI</h1>
+            <p class="tagline" data-en="Agri-Financial & Pre-Cost Engine" data-hi="कृषि लागत, मंडी भाव एवं खाता">Agri-Financial & Pre-Cost Engine</p>
+        </div>
+
+        <nav class="nav-menu">
+            <button class="nav-item active" onclick="switchTab('pre-cost')">
+                <span class="icon">🧮</span> <span data-en="1. Pre-Cost Calculator" data-hi="१. फसल पूर्व लागत कैलकुलेटर">1. Pre-Cost Calculator</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('mandi')">
+                <span class="icon">🏛️</span> <span data-en="2. Mandi Market Rates" data-hi="२. व्यापक मंडी भाव">2. Mandi Market Rates</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('ledger-stored')">
+                <span class="icon">📦</span> <span data-en="3. Stored Produce" data-hi="३. भंडारित उपज">3. Stored Produce</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('ledger-sold')">
+                <span class="icon">💰</span> <span data-en="4. Settle Sale & Profit" data-hi="४. बिक्री व लाभ दर्ज करें">4. Settle Sale & Profit</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('ledger-history')">
+                <span class="icon">📜</span> <span data-en="5. History & Next Crop" data-hi="५. उपज इतिहास व अगली फसल">5. History & Next Crop</span>
+            </button>
+            <button class="nav-item" onclick="switchTab('add-batch')">
+                <span class="icon">➕</span> <span data-en="Register Produce AI" data-hi="उपज दर्ज व एआई जांच">Register Produce AI</span>
+            </button>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="lang-switch">
+                <button id="btn-en" class="btn-lang active" onclick="setLanguage('en')">English</button>
+                <button id="btn-hi" class="btn-lang" onclick="setLanguage('hi')">हिंदी</button>
+            </div>
+            <div class="farmer-profile">
+                <span class="status-indicator"></span>
+                <span id="display-farmer">Ramesh Patel (Agra, UP)</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        
+        <header class="top-header">
+            <div>
+                <h2 id="page-title" class="page-title" data-en="Farm Financial & Yield Advisory" data-hi="कृषि लागत, पैदावार व मंडी सलाहकार">Farm Financial & Yield Advisory</h2>
+                <p class="subtitle" data-en="Calculate production costs, fetch verified mandi rates, and manage farm finances." data-hi="लागत का अग्रिम अनुमान लगाएं, सटीक मंडी भाव देखें और शुद्ध मुनाफा बढ़ाएं।">Calculate production costs, fetch verified mandi rates, and manage farm finances.</p>
+            </div>
+            <button class="btn-quick-demo" onclick="fillDemoBatch()">
+                ⚡ <span data-en="Load Tomato Demo" data-hi="डेमो लोड करें (टमाटर)">Load Tomato Demo</span>
+            </button>
+        </header>
+
+        <section class="ledger-stat-strip">
+            <div class="stat-cell">
+                <span class="stat-label" data-en="ACTIVE STORED PRODUCE" data-hi="वर्तमान भंडारित उपज">ACTIVE STORED PRODUCE</span>
+                <span class="stat-value" id="stat-active-qty">2,800 <small>KG</small></span>
+            </div>
+            <div class="stat-cell border-mid">
+                <span class="stat-label" data-en="HIGH SPOILAGE RISK" data-hi="उच्च सड़न जोखिम">HIGH SPOILAGE RISK</span>
+                <span class="stat-value text-risk" id="stat-high-risk">1 <small>BATCH</small></span>
+            </div>
+            <div class="stat-cell border-mid">
+                <span class="stat-label" data-en="TOTAL HISTORICAL REVENUE" data-hi="कुल ऐतिहासिक आय">TOTAL HISTORICAL REVENUE</span>
+                <span class="stat-value text-green" id="stat-total-revenue">₹ 85,750</span>
+            </div>
+            <div class="stat-cell border-mid">
+                <span class="stat-label" data-en="CUMULATIVE NET PROFIT" data-hi="कुल संचित शुद्ध लाभ">CUMULATIVE NET PROFIT</span>
+                <span class="stat-value text-turmeric" id="stat-total-profit">₹ 49,000</span>
+            </div>
+        </section>
+
+        <!-- TAB 1: PRE-COST CALCULATOR -->
+        <div id="tab-pre-cost" class="tab-panel active">
+            <div class="form-container">
+                <div class="form-header">
+                    <div>
+                        <h3 data-en="Pre-Cost & Crop Production Profit Calculator" data-hi="फसल उत्पादन पूर्व लागत एवं अनुमानित लाभ कैलकुलेटर">Pre-Cost & Crop Production Profit Calculator</h3>
+                        <p class="subtitle" data-en="Estimate inputs, expected yield, real-time market selling rates, and profit per acre." data-hi="जमीन का रकबा, इनपुट खर्च भरें और मंडी भाव के आधार पर संभावित शुद्ध मुनाफा जानें।">Estimate inputs, expected yield, real-time market selling rates, and profit per acre.</p>
+                    </div>
+                </div>
+
+                <form id="pre-cost-form" onsubmit="handlePreCostCalculation(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label data-en="Select Crop" data-hi="फसल चुनें">Select Crop</label>
+                            <select id="calc_crop" onchange="autoFetchMandiBenchmark()">
+                                <option value="Wheat">Wheat (गेहूं)</option>
+                                <option value="Potato">Potato (आलू)</option>
+                                <option value="Tomato">Tomato (टमाटर)</option>
+                                <option value="Mustard">Mustard / Sarson (सरसों)</option>
+                                <option value="Onion">Onion (प्याज)</option>
+                                <option value="Soybean">Soybean (सोयाबीन)</option>
+                                <option value="Cotton">Cotton (कपास)</option>
+                                <option value="Paddy (Basmati)">Paddy / Rice (धान)</option>
+                                <option value="Maize">Maize (मक्का)</option>
+                                <option value="Gram (Chana)">Gram / Chana (चना)</option>
+                                <option value="Moong (Green Gram)">Moong (मूंग दाल)</option>
+                                <option value="Groundnut">Groundnut (मूंगफली)</option>
+                                <option value="Cumin (Jeera)">Cumin / Jeera (जीरा)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="label-with-unit">
+                                <label data-en="Land Area & Unit" data-hi="जमीन का रकबा व इकाई">Land Area & Unit</label>
+                                <select id="calc_area_unit" class="unit-selector" onchange="handlePreCostCalculation()">
+                                    <option value="Acre">Acre (एकड़)</option>
+                                    <option value="Hectare">Hectare (हेक्टेयर)</option>
+                                    <option value="Bigha">Bigha (बीघा)</option>
+                                </select>
+                            </div>
+                            <input type="number" step="any" id="calc_area" value="2" placeholder="e.g. 2" required oninput="handlePreCostCalculation()">
+                        </div>
+                    </div>
+
+                    <div class="cost-module">
+                        <div class="cost-header">
+                            <h4 data-en="Input Expenses & Operating Costs (₹)" data-hi="लागत एवं संचालन खर्च विवरण (₹)">Input Expenses & Operating Costs (₹)</h4>
+                        </div>
+                        <div class="cost-grid">
+                            <div class="cost-item">
+                                <label data-en="Seed Cost / Quantity (₹)" data-hi="बीज / पौध लागत (₹)">Seed Cost (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_seed" value="5000" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Fertilizer / Manure (₹)" data-hi="उर्वरक व खाद खर्च (₹)">Fertilizer Cost (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_fert" value="4500" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Pesticide / Spray (₹)" data-hi="कीटनाशक / छिड़काव (₹)">Pesticides & Spray (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_pest" value="2000" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Irrigation / Watering (₹)" data-hi="सिंचाई खर्च (₹)">Irrigation & Water (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_irrig" value="3000" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Labour Cost (₹)" data-hi="मजदूरी खर्च (₹)">Labour Cost (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_labour" value="6000" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Machinery / Tractor (₹)" data-hi="जुताई व ट्रैक्टर खर्च (₹)">Machinery & Tractor (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_mach" value="3500" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Electricity / Fuel (₹)" data-hi="डीजल व बिजली (₹)">Electricity & Fuel (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_fuel" value="2500" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Misc Expenses (₹)" data-hi="अन्य फुटकर खर्च (₹)">Other Misc Expenses (₹)</label>
+                                <input type="number" class="calc-cost-val" id="calc_misc" value="1500" oninput="handlePreCostCalculation()">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Custom Yield (Optional KG)" data-hi="अपेक्षित उपज (वैकल्पिक KG)">Custom Yield (Optional KG)</label>
+                                <input type="number" id="calc_custom_yield" placeholder="Auto-calculated if blank" oninput="handlePreCostCalculation()">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="calc-results-card" class="calc-results-card">
+                        <h4 class="calc-results-title">📊 <span data-en="Financial & Profit Projection Summary" data-hi="अनुमानित वित्तीय व लाभ समीक्षा">Financial & Profit Projection Summary</span></h4>
+                        <div class="calc-stat-grid">
+                            <div class="res-box">
+                                <span class="res-lbl" data-en="Total Production Cost" data-hi="कुल उत्पादन लागत">Total Production Cost</span>
+                                <span class="res-val" id="res-total-cost">₹ 28,000</span>
+                            </div>
+                            <div class="res-box">
+                                <span class="res-lbl" data-en="Expected Yield" data-hi="अनुमानित पैदावार">Expected Yield</span>
+                                <span class="res-val text-green" id="res-yield">3,800 KG (38 Qt)</span>
+                            </div>
+                            <div class="res-box">
+                                <span class="res-lbl" data-en="Mandi Selling Rate" data-hi="मंडी विक्रय भाव">Mandi Selling Rate</span>
+                                <span class="res-val text-turmeric" id="res-rate">₹ 2,480 / Qt <small id="res-rate-date">(2026-08-30)</small></span>
+                            </div>
+                            <div class="res-box">
+                                <span class="res-lbl" data-en="Estimated Revenue" data-hi="कुल अनुमानित आय">Estimated Revenue</span>
+                                <span class="res-val text-green" id="res-revenue">₹ 94,240</span>
+                            </div>
+                            <div class="res-box highlight-profit">
+                                <span class="res-lbl" data-en="Expected Net Profit / Loss" data-hi="अनुमानित शुद्ध लाभ / हानि">Expected Net Profit / Loss</span>
+                                <span class="res-val text-profit" id="res-net-profit">+ ₹ 66,240</span>
+                            </div>
+                            <div class="res-box highlight-profit">
+                                <span class="res-lbl" data-en="Profit Per Unit" data-hi="प्रति एकड़ / बीघा लाभ">Profit Per Unit</span>
+                                <span class="res-val" id="res-profit-unit">+ ₹ 33,120 / Acre</span>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- TAB 2: COMPREHENSIVE MANDI RATES -->
+        <div id="tab-mandi" class="tab-panel">
+            <div class="mandi-filter-bar">
+                <input type="text" id="mandi-search-crop" placeholder="Search Crop (e.g. Potato, Mustard, Wheat)" oninput="filterMandi()">
+                <select id="mandi-filter-state" onchange="filterMandi()">
+                    <option value="">All States (सभी राज्य)</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Punjab">Punjab</option>
+                    <option value="Madhya Pradesh">Madhya Pradesh</option>
+                    <option value="Rajasthan">Rajasthan</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Haryana">Haryana</option>
+                    <option value="Bihar">Bihar</option>
+                </select>
+                <input type="text" id="mandi-search-market" placeholder="Filter Market / District" oninput="filterMandi()">
+                <button class="btn-secondary" onclick="fetchMandiRates()">🔄 <span data-en="Refresh Rates" data-hi="भाव रीफ्रेश करें">Refresh Rates</span></button>
+            </div>
+
+            <div id="mandi-alert-box" class="mandi-alert hidden"></div>
+
+            <div class="ledger-table-container">
+                <table class="mandi-table">
+                    <thead>
+                        <tr>
+                            <th data-en="State & District" data-hi="राज्य व जिला">State & District</th>
+                            <th data-en="Market (APMC Mandi)" data-hi="मंडी (APMC)">Market (APMC Mandi)</th>
+                            <th data-en="Commodity & Variety" data-hi="फसल व किस्म">Commodity & Variety</th>
+                            <th data-en="Min Price (₹/Qt)" data-hi="न्यूनतम (₹/कुंतल)">Min Price</th>
+                            <th data-en="Max Price (₹/Qt)" data-hi="अधिकतम (₹/कुंतल)">Max Price</th>
+                            <th data-en="Modal Benchmark (₹/Qt)" data-hi="मॉडल भाव (₹/कुंतल)">Modal Benchmark</th>
+                            <th data-en="Data Status / Date" data-hi="डेटा तारीख / स्थिति">Data Status / Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mandi-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 3: STORED PRODUCE -->
+        <div id="tab-ledger-stored" class="tab-panel">
+            <div class="section-bar">
+                <h3 data-en="Active Inventory Batches in Storage" data-hi="सक्रिय भंडारित उपज बैच">Active Inventory Batches in Storage</h3>
+                <span class="badge-count" id="stored-count">2 Batches</span>
+            </div>
+            <div id="stored-batches-list" class="batch-cards-grid"></div>
+        </div>
+
+        <!-- TAB 4: SETTLE SALE -->
+        <div id="tab-ledger-sold" class="tab-panel">
+            <div class="form-container">
+                <div class="form-header">
+                    <div>
+                        <h3 data-en="Enter Final Selling & Logistics Costs" data-hi="अंतिम बिक्री मूल्य एवं विपणन खर्च दर्ज करें">Enter Final Selling & Logistics Costs</h3>
+                        <p class="subtitle" data-en="Combines pre-harvest costs with final sales costs to calculate exact Net Profit/Loss." data-hi="उत्पादन लागत और अंतिम विपणन खर्च को जोड़कर सटीक शुद्ध लाभ/हानि की गणना करें।">Combines pre-harvest costs with final sales costs to calculate exact Net Profit/Loss.</p>
+                    </div>
+                </div>
+
+                <form id="settlement-form" onsubmit="handleSaleSettlement(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label data-en="Select Active Produce Batch" data-hi="सक्रिय उपज बैच चुनें">Select Active Produce Batch</label>
+                            <select id="settle_batch_id" required onchange="handleSettleBatchChange()"></select>
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Selling Date" data-hi="बिक्री की तारीख">Selling Date</label>
+                            <input type="date" id="selling_date" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Quantity Sold (KG)" data-hi="बेची गई मात्रा (किलोग्राम)">Quantity Sold (KG)</label>
+                            <input type="number" step="any" id="sold_quantity_kg" placeholder="e.g. 2000" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Final Selling Price (₹ per KG)" data-hi="अंतिम विक्रय मूल्य (₹ प्रति किलो)">Final Selling Price (₹ per KG)</label>
+                            <input type="number" step="any" id="selling_price_per_kg" placeholder="e.g. 24.50" required>
+                        </div>
+                    </div>
+
+                    <div class="cost-module">
+                        <div class="cost-header">
+                            <h4 data-en="Selling, Handling & Logistics Costs" data-hi="विपणन, ढुलाई एवं हैंडलिंग खर्च">Selling, Handling & Logistics Costs</h4>
+                            <button type="button" class="btn-text-action" onclick="addCustomSellingCost()">➕ <span data-en="Add Expense Field" data-hi="अन्य खर्च जोड़ें">Add Expense Field</span></button>
+                        </div>
+                        <div class="cost-grid" id="selling-costs-container">
+                            <div class="cost-item">
+                                <label data-en="Packaging Material (₹)" data-hi="पैकिंग सामग्री (₹)">Packaging Material (₹)</label>
+                                <input type="number" class="selling-cost-val" data-cat="packaging" placeholder="0" value="1500">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Packing Labor (₹)" data-hi="पैकिंग मजदूरी (₹)">Packing Labor (₹)</label>
+                                <input type="number" class="selling-cost-val" data-cat="packing_labor" placeholder="0" value="1200">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Machine/Harvest Labor (₹)" data-hi="कटाई/मशीन खर्च (₹)">Machine/Harvest Labor (₹)</label>
+                                <input type="number" class="selling-cost-val" data-cat="harvest_labor" placeholder="0" value="2000">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Loading / Unloading (₹)" data-hi="लोडिंग / उतराई (₹)">Loading / Unloading (₹)</label>
+                                <input type="number" class="selling-cost-val" data-cat="loading_unloading" placeholder="0" value="800">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Transportation / Freight (₹)" data-hi="परिवहन / भाड़ा (₹)">Transportation / Freight (₹)</label>
+                                <input type="number" class="selling-cost-val" data-cat="transportation" placeholder="0" value="2500">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Mandi Commission / Cess (₹)" data-hi="मंडी टैक्स / आढ़त (₹)">Mandi Commission / Cess (₹)</label>
+                                <input type="number" class="selling-cost-val" data-cat="mandi_commission" placeholder="0" value="1100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btn-settle-sale" class="btn-primary-action">
+                        ✅ <span data-en="Confirm Sale, Settle Financials & Archive to History" data-hi="बिक्री पक्की करें, मुनाफा निकालें एवं इतिहास में दर्ज करें">Confirm Sale, Settle Financials & Archive to History</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- TAB 5: HISTORY & NEXT CROP -->
+        <div id="tab-ledger-history" class="tab-panel">
+            <div class="section-bar">
+                <h3 data-en="Historical Crop Records & AI Rotation Plans" data-hi="ऐतिहासिक फसल रिकॉर्ड एवं अगली फसल योजनाएं">Historical Crop Records & AI Rotation Plans</h3>
+                <span class="badge-count" id="history-count">1 Record</span>
+            </div>
+            <div id="history-batches-list" class="history-cards-grid"></div>
+        </div>
+
+        <!-- TAB 6: REGISTER PRODUCE -->
+        <div id="tab-add-batch" class="tab-panel">
+            <div class="form-container">
+                <div class="form-header">
+                    <h3 data-en="Register New Produce for Quality & Spoilage AI" data-hi="गुणवत्ता व सड़न जांच हेतु नई उपज दर्ज करें">Register New Produce for Quality & Spoilage AI</h3>
+                </div>
+
+                <form id="produce-form" onsubmit="handleProduceSubmit(event)">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label data-en="Produce / Crop Name" data-hi="फसल / उपज का नाम">Produce / Crop Name</label>
+                            <input type="text" id="crop_name" placeholder="e.g. Potato, Tomato, Onion" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Crop Variety" data-hi="फसल की किस्म">Crop Variety</label>
+                            <input type="text" id="crop_variety" placeholder="e.g. Kufri Jyoti, Hybrid Red, Desi" value="Desi / Local">
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Field / Land Identification" data-hi="खेत / भूमि का विवरण">Field / Land Identification</label>
+                            <input type="text" id="field_name" placeholder="e.g. North Acre Plot 2" value="North Acre Plot 1">
+                        </div>
+                        <div class="form-group">
+                            <div class="label-with-unit">
+                                <label data-en="Quantity & Weight Unit" data-hi="मात्रा एवं वजन इकाई">Quantity & Weight Unit</label>
+                                <select id="weight_unit" class="unit-selector">
+                                    <option value="kg">kg</option>
+                                    <option value="Quintal">Quintal</option>
+                                    <option value="Tons">Tons</option>
+                                </select>
+                            </div>
+                            <input type="number" step="any" id="quantity" placeholder="e.g. 2000" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Harvest Date" data-hi="कटाई की तारीख">Harvest Date</label>
+                            <input type="date" id="harvest_date" required>
+                        </div>
+                        <div class="form-group">
+                            <label data-en="Storage Facility" data-hi="भंडारण स्थिति">Storage Facility</label>
+                            <select id="storage_type">
+                                <option value="Ventilated Godown">Ventilated Godown</option>
+                                <option value="Open Air Jute Bags">Open Air Jute Bags</option>
+                                <option value="Cold Storage Unit">Cold Storage Unit</option>
+                                <option value="Farm Shade">Farm Shade</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="cost-module">
+                        <div class="cost-header">
+                            <h4 data-en="Pre-Harvest Production Expenditure (₹)" data-hi="कटाई पूर्व उत्पादन लागत (₹)">Pre-Harvest Production Expenditure (₹)</h4>
+                        </div>
+                        <div class="cost-grid" id="production-costs-container">
+                            <div class="cost-item">
+                                <label data-en="Seeds / Saplings (₹)" data-hi="बीज / पौध खर्च (₹)">Seeds / Saplings (₹)</label>
+                                <input type="number" class="prod-cost-val" data-cat="seeds" placeholder="0" value="4500">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Field Labor (₹)" data-hi="खेत मजदूरी (₹)">Field Labor (₹)</label>
+                                <input type="number" class="prod-cost-val" data-cat="labor" placeholder="0" value="4000">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Fertilizers & Nutrients (₹)" data-hi="उर्वरक व खाद (₹)">Fertilizers & Nutrients (₹)</label>
+                                <input type="number" class="prod-cost-val" data-cat="fertilizer" placeholder="0" value="3000">
+                            </div>
+                            <div class="cost-item">
+                                <label data-en="Irrigation & Power (₹)" data-hi="सिंचाई व बिजली (₹)">Irrigation & Power (₹)</label>
+                                <input type="number" class="prod-cost-val" data-cat="irrigation" placeholder="0" value="1500">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group photo-upload-box">
+                        <label data-en="Crop Photo (Gemini Multimodal Quality Detection)" data-hi="फसल फोटो (जेमिनी एआई विज़न गुणवत्ता जांच)">Crop Photo (Gemini Multimodal Quality Detection)</label>
+                        <input type="file" id="crop_image" accept="image/*" onchange="handleImageSelected(event)">
+                        <div id="image-preview-wrapper" class="image-preview-wrapper hidden">
+                            <img id="preview-img" src="" alt="Crop Scan">
+                            <div class="preview-actions">
+                                <button type="button" class="btn-small-danger" onclick="removeImage()">🗑️ <span data-en="Delete Photo" data-hi="फोटो हटाएं">Delete Photo</span></button>
+                                <button type="button" class="btn-small-neutral" onclick="triggerFileInput()">🔄 <span data-en="Replace Photo" data-hi="फोटो बदलें">Replace Photo</span></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btn-submit-produce" class="btn-primary-action">
+                        ⚡ <span id="submit-text" data-en="Analyze Quality and Predict Spoilage" data-hi="गुणवत्ता जांचें एवं सड़न का अनुमान लगाएं">Analyze Quality and Predict Spoilage</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- FLOATING AI ASSISTANT -->
+    <div id="assistant-bubble" class="assistant-bubble" onclick="toggleAssistant()">
+        💬 <span data-en="Ask Krishi AI" data-hi="कृषि AI से पूछें">Ask Krishi AI</span>
+    </div>
+
+    <div id="assistant-panel" class="assistant-panel">
+        <div class="assistant-header">
+            <div>
+                <h4>🌾 KrishiSahayak AI</h4>
+                <p class="assistant-sub" data-en="Multimodal & Voice Farm Copilot" data-hi="बहुभाषी व आवाज-सक्षम कृषि सहायक">Multimodal & Voice Farm Copilot</p>
+            </div>
+            <div class="assistant-head-actions">
+                <!-- HINDI/ENGLISH TOGGLE BUTTON IN CHAT -->
+                <button id="btn-chat-lang-toggle" class="btn-chat-toggle" onclick="toggleChatLanguage()" title="Switch Chat Language">
+                    🌐 <span id="chat-lang-indicator">HI</span>
+                </button>
+                <button id="btn-live-voice" class="btn-head-voice" onclick="toggleLiveVoiceConversation()" title="Toggle Voice Conversation">
+                    🎙️ <span id="voice-chat-status">Voice Chat</span>
+                </button>
+                <button class="btn-close-assistant" onclick="toggleAssistant()">✖</button>
+            </div>
+        </div>
+
+        <div class="assistant-chat-body" id="chat-messages">
+            <div class="bot-msg">
+                <span data-en="Namaste! I am your AI Agronomist. Ask about crop costs, mandi prices, yield predictions, or upload disease photos." 
+                      data-hi="नमस्ते! मैं आपका कृषि AI सहायक हूँ। मुझसे लागत, मंडी भाव, फसल बीमारी या मुनाफे के बारे में पूछें।">
+                      Namaste! I am your AI Agronomist. Ask about crop costs, mandi prices, yield predictions, or upload disease photos.
+                </span>
+            </div>
+        </div>
+
+        <div id="chat-media-preview" class="chat-media-preview hidden">
+            <img id="chat-img-thumb" src="" alt="Thumb">
+            <span id="chat-media-label">Image attached</span>
+            <button class="btn-remove-chat-media" onclick="removeChatMedia()">✖</button>
+        </div>
+
+        <div class="assistant-input-area">
+            <label class="btn-chat-icon" title="Upload Crop Photo">
+                📷
+                <input type="file" id="chat-file-input" accept="image/*" onchange="handleChatImageUpload(event)" style="display: none;">
+            </label>
+            <button class="btn-chat-icon" id="btn-mic-input" onclick="recordAudioMessage()" title="Speak aloud">
+                🎤
+            </button>
+            <input type="text" id="assistant-query" placeholder="Type or ask a farming question..." onkeypress="handleAssistantKey(event)">
+            <button class="btn-send-assistant" onclick="sendAssistantMessage()">➤</button>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
