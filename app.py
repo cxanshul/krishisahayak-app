@@ -189,7 +189,11 @@ Respond strictly in valid JSON:
                 response = gemini_client.models.generate_content(
                     model=GEMINI_MODEL,
                     contents=contents,
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        max_output_tokens=256,
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                    )
                 )
                 if response.text:
                     ai_res = json.loads(response.text)
@@ -287,7 +291,11 @@ Recommend 2 optimal crop rotation plans in valid JSON:
                 rec_res = gemini_client.models.generate_content(
                     model=GEMINI_MODEL,
                     contents=[prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        max_output_tokens=256,
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                    )
                 )
                 if rec_res.text:
                     next_crop_plans = json.loads(rec_res.text)
@@ -530,7 +538,11 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
         try:
             response = gemini_client.models.generate_content(
                 model=GEMINI_MODEL,
-                contents=contents
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=512,
+                    thinking_config=types.ThinkingConfig(thinking_level="low")
+                )
             )
             reply_text = response.text or ("कोई उत्तर प्राप्त नहीं हुआ।" if lang == "hi" else "I could not generate a response. Please try again.")
         except Exception as e:
