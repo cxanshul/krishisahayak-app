@@ -27,11 +27,16 @@ app = Flask(
 )
 CORS(app)
 
-GEMINI_KEY = os.getenv("GEMINI_API_KEY")
-DATAGOV_KEY = os.getenv("DATAGOV_API_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+def env_value(name, default=None):
+    value = os.getenv(name, default)
+    return value.strip().strip('"').strip("'") if isinstance(value, str) else value
+
+
+GEMINI_KEY = env_value("GEMINI_API_KEY")
+DATAGOV_KEY = env_value("DATAGOV_API_KEY")
+SUPABASE_URL = env_value("SUPABASE_URL")
+SUPABASE_KEY = env_value("SUPABASE_KEY")
+GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 
 # ============================================================
 # CLIENTS
@@ -523,7 +528,8 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
             )
             reply_text = response.text or ("कोई उत्तर प्राप्त नहीं हुआ।" if lang == "hi" else "I could not generate a response. Please try again.")
         except Exception as e:
-            reply_text = f"AI Error: {e}"
+            app.logger.exception("Gemini assistant request failed (model=%s)", GEMINI_MODEL)
+            reply_text = "कृषि AI सेवा अभी उपलब्ध नहीं है।" if lang == "hi" else "The AI service is temporarily unavailable. Please try again."
 
         if "ACTION_UPDATE:" in reply_text:
             try:

@@ -192,18 +192,24 @@ async function handlePreCostCalculation(e) {
         const d = await res.json();
 
         if (d.success) {
-            document.getElementById("res-total-cost").innerText = `₹ ${d.total_production_cost.toLocaleString()}`;
-            document.getElementById("res-yield").innerText = `${d.expected_yield_kg.toLocaleString()} KG (${d.expected_yield_quintals} Qt)`;
-            document.getElementById("res-rate").innerHTML = `₹ ${d.mandi_modal_price_per_quintal.toLocaleString()} / Qt <small id="res-rate-date">(${d.rate_date})</small>`;
-            document.getElementById("res-revenue").innerText = `₹ ${d.estimated_revenue.toLocaleString()}`;
+            const totalCostEl = document.getElementById("res-total-cost");
+            const yieldEl = document.getElementById("res-yield");
+            const rateEl = document.getElementById("res-rate");
+            const revenueEl = document.getElementById("res-revenue");
+            if (totalCostEl) totalCostEl.innerText = `₹ ${d.total_production_cost.toLocaleString()}`;
+            if (yieldEl) yieldEl.innerText = `${d.expected_yield_kg.toLocaleString()} KG (${d.expected_yield_quintals} Qt)`;
+            if (rateEl) rateEl.innerHTML = `₹ ${d.mandi_modal_price_per_quintal.toLocaleString()} / Qt <small id="res-rate-date">(${d.rate_date})</small>`;
+            if (revenueEl) revenueEl.innerText = `₹ ${d.estimated_revenue.toLocaleString()}`;
 
             const profitEl = document.getElementById("res-net-profit");
             const profitVal = d.expected_profit_loss;
-            profitEl.innerText = `${profitVal >= 0 ? '+' : '-'} ₹ ${Math.abs(profitVal).toLocaleString()}`;
-            profitEl.className = `res-val ${profitVal >= 0 ? 'text-green' : 'text-risk'}`;
+            if (profitEl) {
+                profitEl.innerText = `${profitVal >= 0 ? '+' : '-'} ₹ ${Math.abs(profitVal).toLocaleString()}`;
+                profitEl.className = `res-val ${profitVal >= 0 ? 'text-green' : 'text-risk'}`;
+            }
 
             const unitEl = document.getElementById("res-profit-unit");
-            unitEl.innerText = `${d.profit_per_selected_unit >= 0 ? '+' : '-'} ₹ ${Math.abs(d.profit_per_selected_unit).toLocaleString()} / ${unit}`;
+            if (unitEl) unitEl.innerText = `${d.profit_per_selected_unit >= 0 ? '+' : '-'} ₹ ${Math.abs(d.profit_per_selected_unit).toLocaleString()} / ${unit}`;
         }
     } catch (err) {
         console.error("Calculator error:", err);
@@ -464,11 +470,24 @@ async function handleSaleSettlement(e) {
         sellingCosts[cat] = parseFloat(input.value) || 0;
     });
 
+    const batchIdInput = document.getElementById("settle_batch_id");
+    const soldQuantityInput = document.getElementById("sold_quantity_kg");
+    const sellingPriceInput = document.getElementById("selling_price_per_kg");
+    const sellingDateInput = document.getElementById("selling_date");
+    if (!batchIdInput || !soldQuantityInput || !sellingPriceInput || !sellingDateInput) {
+        showToast(translations[currentLang].toastError, "error");
+        if (btn) {
+            btn.innerText = translations[currentLang].settleBtn;
+            btn.disabled = false;
+        }
+        return;
+    }
+
     const payload = {
-        batch_id: document.getElementById("settle_batch_id").value,
-        sold_quantity_kg: document.getElementById("sold_quantity_kg").value,
-        selling_price_per_kg: document.getElementById("selling_price_per_kg").value,
-        selling_date: document.getElementById("selling_date").value,
+        batch_id: batchIdInput.value,
+        sold_quantity_kg: soldQuantityInput.value,
+        selling_price_per_kg: sellingPriceInput.value,
+        selling_date: sellingDateInput.value,
         selling_costs: sellingCosts
     };
 
@@ -557,15 +576,29 @@ async function handleProduceSubmit(e) {
         prodCosts[cat] = parseFloat(input.value) || 0;
     });
 
+    const cropNameInput = document.getElementById("crop_name");
+    const varietyInput = document.getElementById("crop_variety");
+    const fieldNameInput = document.getElementById("field_name");
+    const quantityInput = document.getElementById("quantity");
+    const weightUnitInput = document.getElementById("weight_unit");
+    const harvestDateInput = document.getElementById("harvest_date");
+    const storageTypeInput = document.getElementById("storage_type");
+    if (!cropNameInput || !varietyInput || !fieldNameInput || !quantityInput || !weightUnitInput || !harvestDateInput || !storageTypeInput) {
+        showToast(translations[currentLang].toastError, "error");
+        if (label) label.innerText = translations[currentLang].analyzeBtn;
+        if (btn) btn.disabled = false;
+        return;
+    }
+
     const payload = {
         phone: activeFarmerPhone,
-        crop_name: document.getElementById("crop_name").value,
-        variety: document.getElementById("crop_variety").value,
-        field_name: document.getElementById("field_name").value,
-        quantity: document.getElementById("quantity").value,
-        unit: document.getElementById("weight_unit").value,
-        harvest_date: document.getElementById("harvest_date").value,
-        storage_type: document.getElementById("storage_type").value,
+        crop_name: cropNameInput.value,
+        variety: varietyInput.value,
+        field_name: fieldNameInput.value,
+        quantity: quantityInput.value,
+        unit: weightUnitInput.value,
+        harvest_date: harvestDateInput.value,
+        storage_type: storageTypeInput.value,
         image_base64: selectedImageBase64,
         production_costs: prodCosts
     };
@@ -783,7 +816,13 @@ async function sendAssistantMessage() {
 
     const userBubble = document.createElement("div");
     userBubble.className = "user-msg";
-    userBubble.innerHTML = text ? text : `<em>[Photo Attached for AI Diagnosis]</em>`;
+    if (text) {
+        userBubble.innerText = text;
+    } else {
+        const attachmentLabel = document.createElement("em");
+        attachmentLabel.innerText = "[Photo Attached for AI Diagnosis]";
+        userBubble.appendChild(attachmentLabel);
+    }
     chatBody.appendChild(userBubble);
     
     // Clear the input box instantly so it doesn't double-send
@@ -810,7 +849,7 @@ async function sendAssistantMessage() {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
-        botBubble.innerText = data.reply;
+        botBubble.innerText = data.reply || "The assistant returned no response. Please try again.";
         
         if (data.updated_batches) {
             produceBatches = data.updated_batches;
