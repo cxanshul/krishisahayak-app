@@ -49,7 +49,13 @@ supabase: Client = (
 )
 
 gemini_client = (
-    genai.Client(api_key=GEMINI_KEY)
+    genai.Client(
+        api_key=GEMINI_KEY,
+        http_options=types.HttpOptions(
+            timeout=20000,
+            retry_options=types.HttpRetryOptions(attempts=1)
+        )
+    )
     if GEMINI_KEY
     else None
 )
