@@ -789,3 +789,162 @@ body {
 
 .toast.error { border-left-color: var(--risk-red); }
 .toast.success { border-left-color: var(--leaf-green); }
+
+@media (max-width: 760px) {
+    body {
+        display: block;
+        min-width: 0;
+    }
+
+    .sidebar {
+        width: 100%;
+        padding: 14px 14px 10px;
+    }
+
+    .brand {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .brand .logo { font-size: 20px; }
+    .brand .tagline {
+        margin-top: 0;
+        text-align: right;
+        font-size: 9px;
+    }
+
+    .nav-menu {
+        flex-direction: row;
+        overflow-x: auto;
+        margin: 14px -14px 0;
+        padding: 0 14px 4px;
+        gap: 6px;
+        scrollbar-width: none;
+    }
+
+    .nav-menu::-webkit-scrollbar { display: none; }
+
+    .nav-item {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        padding: 9px 11px;
+        font-size: 12px;
+    }
+
+    .nav-item .icon { font-size: 14px; }
+
+    .sidebar-footer {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 10px;
+        margin-top: 12px;
+        padding-top: 10px;
+    }
+
+    .farmer-profile {
+        justify-content: flex-end;
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    .main-content { padding: 20px 14px 100px; }
+
+    .top-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 14px;
+        padding-bottom: 14px;
+    }
+
+    .page-title { font-size: 23px; line-height: 1.15; }
+    .subtitle { font-size: 12px; line-height: 1.45; }
+
+    .btn-quick-demo {
+        width: 100%;
+        padding: 10px 14px;
+    }
+
+    .ledger-stat-strip {
+        grid-template-columns: 1fr 1fr;
+        margin: 16px 0 20px;
+    }
+
+    .stat-cell { padding: 12px 11px; }
+    .stat-cell:nth-child(odd) { border-left: none; }
+    .stat-cell:nth-child(n + 3) { border-top: 1px solid var(--border-ledger); }
+    .stat-label { font-size: 9px; line-height: 1.25; }
+    .stat-value { font-size: 21px; }
+    .stat-value small { font-size: 10px; }
+
+    .section-bar { align-items: flex-start; gap: 10px; }
+    .section-bar h3 { font-size: 17px; line-height: 1.25; }
+
+    .form-container { padding: 16px 13px; }
+    .form-header { align-items: flex-start; margin-bottom: 16px; }
+    .form-grid, .cost-grid, .calc-stat-grid { grid-template-columns: 1fr; gap: 10px; }
+    .cost-module { padding: 12px; margin: 14px 0; }
+    .cost-header h4 { font-size: 14px; line-height: 1.3; }
+    .calc-results-card { padding: 14px; }
+    .res-val { font-size: 18px; }
+
+    .mandi-filter-bar {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .mandi-filter-bar .btn-secondary { width: 100%; }
+    .ledger-table-container { overflow-x: auto; }
+    .mandi-table { min-width: 760px; }
+
+    .batch-card {
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .batch-card .batch-advisory,
+    .batch-card > :last-child { grid-column: 1 / -1; }
+    .history-card { padding: 14px; }
+    .history-card-header { gap: 8px; align-items: flex-start; }
+    .history-card-header h4 { font-size: 18px; }
+    .history-financial-grid, .next-crop-items { grid-template-columns: 1fr 1fr; padding: 10px; gap: 8px; }
+
+    .assistant-bubble {
+        right: 14px;
+        bottom: 14px;
+        padding: 11px 14px;
+        font-size: 13px;
+    }
+
+    .assistant-panel {
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        width: auto;
+        height: min(620px, calc(100vh - 20px));
+        border-radius: 8px;
+    }
+
+    .assistant-header { padding: 12px; gap: 8px; align-items: flex-start; }
+    .assistant-header h4 { font-size: 15px; }
+    .assistant-sub { font-size: 11px; line-height: 1.3; }
+    .assistant-head-actions { gap: 5px; }
+    .btn-chat-toggle, .btn-head-voice { padding: 7px 8px; }
+    .btn-close-assistant { padding: 4px; }
+    .assistant-chat-body { padding: 12px 10px; }
+    .bot-msg, .user-msg { font-size: 13px; line-height: 1.45; }
+    .assistant-input-area { padding: 8px 6px; gap: 5px; }
+    .btn-chat-icon, .btn-send-assistant { min-width: 40px; height: 40px; padding: 8px; }
+    .assistant-input-area input { min-width: 0; height: 40px; font-size: 14px; }
+}
+
+@media (max-width: 390px) {
+    .brand .tagline { max-width: 132px; }
+    .farmer-profile { overflow: hidden; text-overflow: ellipsis; }
+    .assistant-head-actions { gap: 3px; }
+    .btn-head-voice { max-width: 74px; }
+    .history-financial-grid, .next-crop-items { grid-template-columns: 1fr; }
+}
