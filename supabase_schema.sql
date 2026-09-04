@@ -1,6 +1,7 @@
 -- Upgraded Produce & History Batches Table
 CREATE TABLE IF NOT EXISTS produce_batches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    farmer_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     farmer_phone TEXT NOT NULL DEFAULT '9876543210',
     crop_name TEXT NOT NULL,
     variety TEXT DEFAULT 'Desi / Local',
@@ -37,3 +38,6 @@ CREATE TABLE IF NOT EXISTS produce_batches (
     image_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE produce_batches ADD COLUMN IF NOT EXISTS farmer_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS produce_batches_farmer_id_idx ON produce_batches (farmer_id);

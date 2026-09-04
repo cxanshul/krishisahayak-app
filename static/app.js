@@ -1,5 +1,4 @@
 let currentLang = 'en';
-let activeFarmerPhone = "9876543210";
 let produceBatches = [];
 let mandiRecordsCache = [];
 let selectedImageBase64 = null;
@@ -57,6 +56,11 @@ document.addEventListener("DOMContentLoaded", () => {
     handlePreCostCalculation();
 });
 
+async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/auth";
+}
+
 function switchTab(tabId) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
@@ -113,7 +117,11 @@ function toggleChatLanguage() {
 
 async function loadBatches() {
     try {
-        const res = await fetch(`/api/produce/list?phone=${activeFarmerPhone}`);
+        const res = await fetch("/api/produce/list");
+        if (res.status === 401) {
+            window.location.href = "/auth";
+            return;
+        }
         const data = await res.json();
         produceBatches = data.batches || [];
     } catch (e) {
@@ -591,7 +599,6 @@ async function handleProduceSubmit(e) {
     }
 
     const payload = {
-        phone: activeFarmerPhone,
         crop_name: cropNameInput.value,
         variety: varietyInput.value,
         field_name: fieldNameInput.value,

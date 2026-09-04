@@ -3,11 +3,12 @@ import json
 import base64
 import requests
 import uuid
+from functools import wraps
 from io import BytesIO
 from datetime import datetime, date
 
 from PIL import Image
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, session, url_for
 from flask_cors import CORS
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -31,6 +32,8 @@ def env_value(name, default=None):
     value = os.getenv(name, default)
     return value.strip().strip('"').strip("'") if isinstance(value, str) else value
 
+app.secret_key = env_value("FLASK_SECRET_KEY", "change-this-secret-before-production")
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
 GEMINI_KEY = env_value("GEMINI_API_KEY")
 DATAGOV_KEY = env_value("DATAGOV_API_KEY")
@@ -120,16 +123,90 @@ def decode_image(image_base64):
 # ROUTES
 # ============================================================
 
+def current_user():
+    return session.get("user")
+
+def require_auth(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        if not current_user():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required."}), 401
+            return redirect(url_for("auth_page"))
+        return view(*args, **kwargs)
+    return wrapped_view
+
+def user_batches(user_id):
+    if supabase:
+        try:
+            result = supabase.table("produce_batches").select("*").eq("farmer_id", user_id).order("created_at", desc=True).execute()
+            return result.data or []
+        except Exception as error:
+            app.logger.warning("Could not load user batches: %s", error)
+    return [batch for batch in DATA_STORE if batch.get("farmer_id") == user_id]
+
+@app.route("/auth")
+def auth_page():
+    if current_user():
+        return redirect(url_for("home"))
+    return render_template("auth.html")
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    if not supabase:
+        return jsonify({"error": "Supabase is not configured on the server."}), 503
+    data = request.json or {}
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    if not email or len(password) < 6:
+        return jsonify({"error": "Enter a valid email and a password of at least 6 characters."}), 400
+    try:
+        result = supabase.auth.sign_up({"email": email, "password": password})
+        user = getattr(result, "user", None)
+        auth_session = getattr(result, "session", None)
+        if not user:
+            return jsonify({"error": "Registration could not be completed."}), 400
+        if not auth_session:
+            return jsonify({"message": "Account created. Check your email to confirm it, then log in."})
+        session["user"] = {"id": user.id, "email": user.email}
+        return jsonify({"success": True, "user": session["user"]})
+    except Exception as error:
+        return jsonify({"error": str(error)}), 400
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    if not supabase:
+        return jsonify({"error": "Supabase is not configured on the server."}), 503
+    data = request.json or {}
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    try:
+        result = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        user = getattr(result, "user", None)
+        if not user:
+            return jsonify({"error": "Login failed. Check your email and password."}), 401
+        session["user"] = {"id": user.id, "email": user.email}
+        return jsonify({"success": True, "user": session["user"]})
+    except Exception:
+        return jsonify({"error": "Login failed. Check your email and password."}), 401
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"success": True})
+
 @app.route("/")
+@require_auth
 def home():
     return render_template("index.html")
 
 @app.route("/api/produce/list", methods=["GET"])
+@require_auth
 def list_produce():
-    phone = request.args.get("phone", "9876543210")
+    user = current_user()
     if supabase:
         try:
-            res = supabase.table("produce_batches").select("*").eq("farmer_phone", phone).order("created_at", desc=True).execute()
+            res = supabase.table("produce_batches").select("*").eq("farmer_id", user["id"]).order("created_at", desc=True).execute()
             if hasattr(res, 'data'):
                 # Sync local store with Supabase
                 global DATA_STORE
@@ -138,14 +215,15 @@ def list_produce():
         except Exception as e:
             print(f"Supabase error: {e}")
     
-    local = [b for b in DATA_STORE if b.get("farmer_phone") == phone]
+    local = [b for b in DATA_STORE if b.get("farmer_id") == user["id"]]
     return jsonify({"success": True, "batches": local})
 
 @app.route("/api/produce/analyze-and-add", methods=["POST"])
+@require_auth
 def analyze_and_add_produce():
     try:
         data = request.json or {}
-        phone = data.get("phone", "9876543210")
+        user = current_user()
         crop_name = str(data.get("crop_name", "Produce")).strip()
         variety = str(data.get("variety", "Desi / Local")).strip()
         field_name = str(data.get("field_name", "Field 1")).strip()
@@ -206,12 +284,9 @@ Respond strictly in valid JSON:
             except Exception as e:
                 print(f"Gemini quality error: {e}")
 
-        # Use UUID to prevent clashes in Supabase
-        batch_uuid = f"batch-{str(uuid.uuid4())[:8]}"
-
         new_batch = {
-            "id": batch_uuid,
-            "farmer_phone": phone,
+            "farmer_id": user["id"],
+            "farmer_phone": user["email"],
             "crop_name": crop_name,
             "variety": variety,
             "field_name": field_name,
@@ -239,20 +314,19 @@ Respond strictly in valid JSON:
             "next_crop_recommendation": []
         }
 
-        if supabase:
-            try:
-                res = supabase.table("produce_batches").insert(new_batch).execute()
-                if hasattr(res, 'data') and res.data:
-                    new_batch["id"] = res.data[0]["id"]
-            except Exception as err:
-                print(f"Supabase insert err: {err}")
-
+        if not supabase:
+            return jsonify({"success": False, "error": "Supabase is not configured on the server."}), 503
+        res = supabase.table("produce_batches").insert(new_batch).execute()
+        if not getattr(res, "data", None):
+            return jsonify({"success": False, "error": "Crop could not be saved to Supabase."}), 502
+        new_batch = res.data[0]
         DATA_STORE.insert(0, new_batch)
         return jsonify({"success": True, "batch": new_batch})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/api/produce/settle-sale", methods=["POST"])
+@require_auth
 def settle_sale():
     try:
         data = request.json or {}
@@ -263,7 +337,8 @@ def settle_sale():
         selling_costs = data.get("selling_costs", {})
         total_selling_cost = sum(safe_float(v) for v in selling_costs.values())
 
-        batch = next((b for b in DATA_STORE if b["id"] == batch_id), None)
+        user = current_user()
+        batch = next((b for b in user_batches(user["id"]) if str(b["id"]) == str(batch_id)), None)
         if not batch:
             return jsonify({"success": False, "error": "Batch not found"}), 404
 
@@ -502,6 +577,7 @@ def calculate_pre_cost():
 # ============================================================
 
 @app.route("/api/assistant/chat", methods=["POST"])
+@require_auth
 def assistant_chat():
     try:
         data = request.json or {}
@@ -512,10 +588,10 @@ def assistant_chat():
         if not gemini_client:
             return jsonify({
                 "error": "GEMINI_API_KEY is not configured on the server.",
-                "updated_batches": DATA_STORE
+                "updated_batches": user_batches(current_user()["id"])
             }), 503
 
-        batches_context = json.dumps(DATA_STORE, indent=2, ensure_ascii=False)
+        batches_context = json.dumps(user_batches(current_user()["id"]), indent=2, ensure_ascii=False)
         target_lang = "Hindi (हिंदी)" if lang == "hi" else "English"
 
         system_instruction = f"""
@@ -551,7 +627,7 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
             app.logger.exception("Gemini assistant request failed (model=%s)", GEMINI_MODEL)
             return jsonify({
                 "error": f"Gemini request failed: {type(e).__name__}",
-                "updated_batches": DATA_STORE
+                "updated_batches": user_batches(current_user()["id"])
             }), 502
 
         if "ACTION_UPDATE:" in reply_text:
@@ -560,26 +636,32 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
                 reply_text = parts[0].strip()
                 action_data = json.loads(parts[1].strip())
                 batch_id = action_data.get("batch_id")
-                for b in DATA_STORE:
-                    if b["id"] == batch_id:
+                for b in user_batches(current_user()["id"]):
+                    if str(b["id"]) == str(batch_id):
                         for k in ["storage_type", "recommendation"]:
                             if k in action_data:
                                 b[k] = action_data[k]
+                        if supabase:
+                            supabase.table("produce_batches").update({
+                                key: action_data[key]
+                                for key in ["storage_type", "recommendation"]
+                                if key in action_data
+                            }).eq("id", batch_id).eq("farmer_id", current_user()["id"]).execute()
             except Exception as parse_err:
                 print(f"Action parse error: {parse_err}")
 
         if not reply_text.strip():
             return jsonify({
                 "error": "Gemini returned an empty response.",
-                "updated_batches": DATA_STORE
+                "updated_batches": user_batches(current_user()["id"])
             }), 502
 
-        return jsonify({"reply": reply_text, "updated_batches": DATA_STORE})
+        return jsonify({"reply": reply_text, "updated_batches": user_batches(current_user()["id"])})
     except Exception as e:
         app.logger.exception("Unexpected assistant chat error")
         return jsonify({
             "error": f"Assistant server error: {type(e).__name__}",
-            "updated_batches": DATA_STORE
+            "updated_batches": user_batches(current_user()["id"]) if current_user() else []
         }), 500
 
 # ============================================================

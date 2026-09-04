@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KrishiSahayak - Sign in</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="auth-page">
+    <main class="auth-shell">
+        <section class="auth-intro">
+            <p class="auth-kicker">HACKBHOOMI</p>
+            <h1>Know your farm. Grow with confidence.</h1>
+            <p>Securely manage your crop records, costs, mandi rates, and AI advice in one place.</p>
+        </section>
+        <section class="auth-card">
+            <div class="auth-tabs">
+                <button id="login-tab" class="auth-tab active" type="button" onclick="setAuthMode('login')">Log in</button>
+                <button id="register-tab" class="auth-tab" type="button" onclick="setAuthMode('register')">Create account</button>
+            </div>
+            <h2 id="auth-title">Welcome back</h2>
+            <p id="auth-subtitle" class="auth-subtitle">Log in to access your farm dashboard.</p>
+            <form id="auth-form" onsubmit="submitAuth(event)">
+                <label for="auth-email">Email address</label>
+                <input id="auth-email" type="email" autocomplete="email" required placeholder="you@example.com">
+                <label for="auth-password">Password</label>
+                <input id="auth-password" type="password" autocomplete="current-password" minlength="6" required placeholder="At least 6 characters">
+                <button id="auth-submit" class="auth-submit" type="submit">Log in</button>
+            </form>
+            <p id="auth-message" class="auth-message" role="status"></p>
+        </section>
+    </main>
+    <script>
+        let authMode = 'login';
+        function setAuthMode(mode) {
+            authMode = mode;
+            document.getElementById('login-tab').classList.toggle('active', mode === 'login');
+            document.getElementById('register-tab').classList.toggle('active', mode === 'register');
+            document.getElementById('auth-title').innerText = mode === 'login' ? 'Welcome back' : 'Create your account';
+            document.getElementById('auth-subtitle').innerText = mode === 'login' ? 'Log in to access your farm dashboard.' : 'Your crop records will be saved to your Supabase account.';
+            document.getElementById('auth-submit').innerText = mode === 'login' ? 'Log in' : 'Create account';
+            document.getElementById('auth-password').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+            document.getElementById('auth-message').innerText = '';
+        }
+        async function submitAuth(event) {
+            event.preventDefault();
+            const button = document.getElementById('auth-submit');
+            const message = document.getElementById('auth-message');
+            button.disabled = true;
+            message.className = 'auth-message';
+            message.innerText = 'Please wait...';
+            try {
+                const response = await fetch(`/api/auth/${authMode}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: document.getElementById('auth-email').value,
+                        password: document.getElementById('auth-password').value
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Authentication failed.');
+                if (data.success) {
+                    window.location.href = '/';
+                    return;
+                }
+                message.className = 'auth-message success';
+                message.innerText = data.message || 'Check your email to continue.';
+            } catch (error) {
+                message.className = 'auth-message error';
+                message.innerText = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
