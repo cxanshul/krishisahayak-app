@@ -218,6 +218,21 @@ def list_produce():
     local = [b for b in DATA_STORE if b.get("farmer_id") == user["id"]]
     return jsonify({"success": True, "batches": local})
 
+@app.route("/api/produce/delete-all", methods=["DELETE"])
+@require_auth
+def delete_all_produce():
+    user = current_user()
+    if not supabase:
+        return jsonify({"success": False, "error": "Supabase is not configured on the server."}), 503
+    try:
+        supabase.table("produce_batches").delete().eq("farmer_id", user["id"]).execute()
+        global DATA_STORE
+        DATA_STORE = [batch for batch in DATA_STORE if batch.get("farmer_id") != user["id"]]
+        return jsonify({"success": True})
+    except Exception as error:
+        app.logger.exception("Could not delete user crop data")
+        return jsonify({"success": False, "error": f"Could not delete crop data: {error}"}), 502
+
 @app.route("/api/produce/analyze-and-add", methods=["POST"])
 @require_auth
 def analyze_and_add_produce():

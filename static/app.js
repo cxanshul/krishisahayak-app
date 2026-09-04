@@ -61,6 +61,24 @@ async function logout() {
     window.location.href = "/auth";
 }
 
+async function deleteAllProduce() {
+    const confirmed = window.confirm("Delete all your registered crop data from Supabase? This cannot be undone.");
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch("/api/produce/delete-all", { method: "DELETE" });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || `Delete failed (${response.status})`);
+        }
+        produceBatches = [];
+        renderAllViews();
+        showToast("All your crop data was permanently deleted.", "success");
+    } catch (error) {
+        showToast(error.message, "error");
+    }
+}
+
 function switchTab(tabId) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));

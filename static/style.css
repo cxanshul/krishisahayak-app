@@ -844,6 +844,7 @@ body {
 .auth-message.error { color: var(--risk-red); }
 .auth-message.success { color: var(--leaf-green); }
 .btn-logout { margin-left: auto; background: transparent; border: 1px solid #71806b; color: #d3dfce; padding: 4px 7px; font-size: 11px; cursor: pointer; }
+.btn-delete-data { background: transparent; border: 1px solid #8f5548; color: #e9a091; padding: 6px 8px; font-size: 11px; cursor: pointer; text-align: left; }
 
 @media (max-width: 760px) {
     body {
@@ -906,6 +907,7 @@ body {
     }
 
     .btn-logout { padding: 5px 7px; }
+    .btn-delete-data { grid-column: 1 / -1; width: 100%; text-align: center; }
 
     .main-content { padding: 20px 14px 100px; }
 
