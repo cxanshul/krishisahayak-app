@@ -52,8 +52,8 @@ gemini_client = (
     genai.Client(
         api_key=GEMINI_KEY,
         http_options=types.HttpOptions(
-            timeout=20000,
-            retry_options=types.HttpRetryOptions(attempts=1)
+            timeout=120000,
+            retry_options=types.HttpRetryOptions(attempts=2)
         )
     )
     if GEMINI_KEY
@@ -510,8 +510,10 @@ def assistant_chat():
         lang = data.get("lang", "en").strip()
 
         if not gemini_client:
-            reply = "कृषि AI वर्तमान में ऑफलाइन मोड में है।" if lang == "hi" else "Krishi AI is running in offline demo mode. Please verify your GEMINI_API_KEY."
-            return jsonify({"reply": reply, "updated_batches": DATA_STORE})
+            return jsonify({
+                "error": "GEMINI_API_KEY is not configured on the server.",
+                "updated_batches": DATA_STORE
+            }), 503
 
         batches_context = json.dumps(DATA_STORE, indent=2, ensure_ascii=False)
         target_lang = "Hindi (हिंदी)" if lang == "hi" else "English"
@@ -547,7 +549,10 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
             reply_text = response.text or ("कोई उत्तर प्राप्त नहीं हुआ।" if lang == "hi" else "I could not generate a response. Please try again.")
         except Exception as e:
             app.logger.exception("Gemini assistant request failed (model=%s)", GEMINI_MODEL)
-            reply_text = "कृषि AI सेवा अभी उपलब्ध नहीं है।" if lang == "hi" else "The AI service is temporarily unavailable. Please try again."
+            return jsonify({
+                "error": f"Gemini request failed: {type(e).__name__}",
+                "updated_batches": DATA_STORE
+            }), 502
 
         if "ACTION_UPDATE:" in reply_text:
             try:
@@ -563,9 +568,19 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
             except Exception as parse_err:
                 print(f"Action parse error: {parse_err}")
 
+        if not reply_text.strip():
+            return jsonify({
+                "error": "Gemini returned an empty response.",
+                "updated_batches": DATA_STORE
+            }), 502
+
         return jsonify({"reply": reply_text, "updated_batches": DATA_STORE})
     except Exception as e:
-        return jsonify({"reply": f"Server error: {e}", "error": True, "updated_batches": DATA_STORE}), 200
+        app.logger.exception("Unexpected assistant chat error")
+        return jsonify({
+            "error": f"Assistant server error: {type(e).__name__}",
+            "updated_batches": DATA_STORE
+        }), 500
 
 # ============================================================
 # SERVER START

@@ -665,11 +665,25 @@ function handleChatImageUpload(e) {
     if (file) {
         const reader = new FileReader();
         reader.onload = function(evt) {
-            chatImageBase64 = evt.target.result;
-            const thumb = document.getElementById("chat-img-thumb");
-            const preview = document.getElementById("chat-media-preview");
-            if (thumb) thumb.src = chatImageBase64;
-            if (preview) preview.classList.remove("hidden");
+            const source = new Image();
+            source.onload = function() {
+                const maxDimension = 1600;
+                const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.max(1, Math.round(source.width * scale));
+                canvas.height = Math.max(1, Math.round(source.height * scale));
+                canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
+                chatImageBase64 = canvas.toDataURL("image/jpeg", 0.82);
+
+                const thumb = document.getElementById("chat-img-thumb");
+                const preview = document.getElementById("chat-media-preview");
+                if (thumb) thumb.src = chatImageBase64;
+                if (preview) preview.classList.remove("hidden");
+            };
+            source.onerror = function() {
+                showToast("Could not read this image. Please choose another photo.", "error");
+            };
+            source.src = evt.target.result;
         };
         reader.readAsDataURL(file);
     }
@@ -849,6 +863,9 @@ async function sendAssistantMessage() {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
+        if (!res.ok || data.error) {
+            throw new Error(data.error || `Chat request failed (${res.status})`);
+        }
         botBubble.innerText = data.reply || "The assistant returned no response. Please try again.";
         
         if (data.updated_batches) {
@@ -860,7 +877,7 @@ async function sendAssistantMessage() {
             speakAssistantResponse(data.reply);
         }
     } catch (e) {
-        botBubble.innerText = (currentLang === 'hi') ? "AI सर्वर से संपर्क नहीं हो सका। कृपया पुनः प्रयास करें।" : "Could not connect to Krishi AI. Please retry.";
+        botBubble.innerText = `AI error: ${e.message}`;
         if (isLiveVoiceActive) {
             setTimeout(() => recordAudioMessage(), 1000); 
         }
