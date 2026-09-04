@@ -621,8 +621,9 @@ Farmer's Stored Batches Database:
 Capabilities:
 1. Explain pre-production costs, yield estimates, and break-even mandi prices.
 2. Multimodal: If an image is provided, identify crop defects, plant rot, or diseases.
-3. Keep responses concise, clear, and easy for a farmer to understand.
-4. If the user asks to modify a batch, add at the bottom:
+3. Give complete, clear answers that are easy for a farmer to understand. Prefer 2-5 short paragraphs or a short bullet list when useful.
+4. Never stop in the middle of a sentence. Finish the answer before reaching the response limit.
+5. If the user asks to modify a batch, add at the bottom:
 ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": "<val>"}}
 """
         contents = [f"{system_instruction}\n\nUser Question: {user_message}"]
@@ -635,7 +636,7 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
                 model=GEMINI_MODEL,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    max_output_tokens=512,
+                    max_output_tokens=1536,
                     thinking_config=types.ThinkingConfig(thinking_level="low")
                 )
             )
