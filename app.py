@@ -323,7 +323,8 @@ Respond strictly in valid JSON:
         DATA_STORE.insert(0, new_batch)
         return jsonify({"success": True, "batch": new_batch})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        app.logger.exception("Crop registration failed")
+        return jsonify({"success": False, "error": f"Crop could not be saved: {type(e).__name__}: {e}"}), 500
 
 @app.route("/api/produce/settle-sale", methods=["POST"])
 @require_auth

@@ -626,10 +626,10 @@ async function handleProduceSubmit(e) {
             showToast(translations[currentLang].toastSaved, "success");
             switchTab('ledger-stored');
         } else {
-            showToast(translations[currentLang].toastError, "error");
+            showToast(result.error || "Could not save this crop.", "error");
         }
     } catch (e) {
-        showToast(translations[currentLang].toastError, "error");
+        showToast(`Crop registration failed: ${e.message}`, "error");
     } finally {
         if (label) label.innerText = translations[currentLang].analyzeBtn;
         if (btn) btn.disabled = false;
