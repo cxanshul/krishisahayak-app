@@ -285,6 +285,7 @@ Respond strictly in valid JSON:
                 print(f"Gemini quality error: {e}")
 
         new_batch = {
+            "id": str(uuid.uuid4()),
             "farmer_id": user["id"],
             "farmer_phone": user["email"],
             "crop_name": crop_name,
