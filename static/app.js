@@ -804,7 +804,7 @@ function recordAudioMessage() {
     }
 }
 
-function toggleLiveVoiceConversation() {
+async function toggleLiveVoiceConversation() {
     isLiveVoiceActive = !isLiveVoiceActive;
     const btn = document.getElementById("btn-live-voice");
     const statusText = document.getElementById("voice-chat-status");
@@ -812,7 +812,24 @@ function toggleLiveVoiceConversation() {
 
     if (isLiveVoiceActive) {
         if (statusText) statusText.innerText = translations[currentLang].voiceActive;
-        speakAssistantResponse(currentLang === 'hi' ? "लाइव आवाज चालू है। बोलिए, मैं सुन रहा हूँ।" : "Live voice active. Please ask your farming question.");
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        try {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                permissionStream.getTracks().forEach(track => track.stop());
+            }
+            recordAudioMessage();
+        } catch (error) {
+            console.error("Microphone permission error:", error);
+            isLiveVoiceActive = false;
+            if (btn) btn.classList.remove("active");
+            if (statusText) statusText.innerText = translations[currentLang].voiceChatStatus;
+            if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+                showToast(translations[currentLang].micBlocked, "error");
+            } else {
+                showToast(translations[currentLang].voiceError, "error");
+            }
+        }
     } else {
         if (statusText) statusText.innerText = translations[currentLang].voiceChatStatus;
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
