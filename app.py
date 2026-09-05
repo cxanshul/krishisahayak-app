@@ -355,8 +355,17 @@ def get_weather():
         "daily": "weather_code,precipitation_sum,rain_sum,et0_fao_evapotranspiration"
     }
     try:
-        response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=8.0)
-        response.raise_for_status()
+        response = None
+        last_error = None
+        for _ in range(2):
+            try:
+                response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=15.0)
+                response.raise_for_status()
+                break
+            except requests.RequestException as error:
+                last_error = error
+        if response is None or response.status_code != 200:
+            raise last_error or requests.RequestException("Open-Meteo returned no response")
         payload = response.json()
         current = payload.get("current", {})
         current_units = payload.get("current_units", {})
@@ -426,7 +435,7 @@ def get_weather():
         })
     except requests.RequestException as error:
         app.logger.warning("Open-Meteo request failed: %s", error)
-        return jsonify({"success": False, "error": "Weather service is temporarily unavailable."}), 502
+        return jsonify({"success": False, "error": "Weather service is temporarily unavailable. Please retry in a few seconds."}), 502
     except (KeyError, IndexError, TypeError, ValueError) as error:
         app.logger.exception("Unexpected Open-Meteo response")
         return jsonify({"success": False, "error": f"Could not read weather data: {type(error).__name__}"}), 502
