@@ -256,7 +256,7 @@ async function fetchMandiRates() {
     const alertBox = document.getElementById("mandi-alert-box");
     if (!tbody) return;
 
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 24px;">⏳ Loading real-time market data across APMC Mandis...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 24px;">⏳ Loading government APMC market data...</td></tr>`;
 
     try {
         const res = await fetch("/api/market/mandi-rates");
@@ -266,10 +266,10 @@ async function fetchMandiRates() {
         if (alertBox) {
             if (data.source === "live_datagov") {
                 alertBox.className = "mandi-alert live";
-                alertBox.innerText = "🟢 Displaying verified live APMC government mandi arrivals.";
+                alertBox.innerText = "🟢 Displaying live Data.gov.in APMC mandi records.";
             } else {
                 alertBox.className = "mandi-alert fallback";
-                alertBox.innerText = "🟡 Government live API is currently busy. Displaying verified latest recorded benchmark mandi rates.";
+                alertBox.innerText = "🟡 Data.gov.in is unavailable right now. Displaying fallback benchmark rates, not live prices.";
             }
             alertBox.classList.remove("hidden");
         }

@@ -48,6 +48,8 @@ NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
 WEATHER_CACHE_TTL_SECONDS = 600
 WEATHER_CACHE = {}
+MANDI_CACHE_TTL_SECONDS = 900
+MANDI_CACHE = {}
 
 # ============================================================
 # CLIENTS
@@ -734,35 +736,32 @@ def get_mandi_rates():
     state = request.args.get("state", "").strip()
     district = request.args.get("district", "").strip()
     today_str = date.today().strftime("%Y-%m-%d")
+    cache_key = (commodity.lower(), state.lower(), district.lower())
+    cached = MANDI_CACHE.get(cache_key)
+    if cached and time.time() - cached["stored_at"] < MANDI_CACHE_TTL_SECONDS:
+        response_data = dict(cached["data"])
+        response_data["cached"] = True
+        return jsonify(response_data)
 
     records = []
     source = "fallback_cache"
 
     if DATAGOV_KEY:
         try:
-            # We now fetch from TWO different Data.gov APIs to get the widest possible coverage
-            endpoints = [
-                "9ef84268-d588-465a-a308-a864a43d0070", # Original Mandi Daily Arrivals
-                "35985678-0d79-46b4-9ed6-6f13308a1d24"  # New Detailed Varieties Extension
-            ]
-            
-            gov_records = []
-            
-            for endpoint in endpoints:
-                url = (
-                    f"https://api.data.gov.in/resource/{endpoint}"
-                    f"?api-key={DATAGOV_KEY}"
-                    "&format=json"
-                    "&limit=50"
-                )
-                if state:
-                    url += f"&filters[state]={state}"
-                if commodity:
-                    url += f"&filters[commodity]={commodity}"
+            endpoint = "9ef84268-d588-465a-a308-a864a43d0070"
+            url = (
+                f"https://api.data.gov.in/resource/{endpoint}"
+                f"?api-key={DATAGOV_KEY}"
+                "&format=json"
+                "&limit=100"
+            )
+            if state:
+                url += f"&filters[state]={state}"
+            if commodity:
+                url += f"&filters[commodity]={commodity}"
 
-                resp = requests.get(url, timeout=3.0)
-                if resp.status_code == 200:
-                    gov_records.extend(resp.json().get("records", []))
+            resp = requests.get(url, timeout=8.0)
+            gov_records = resp.json().get("records", []) if resp.status_code == 200 else []
 
             if gov_records:
                 # Remove duplicates so farmers don't see the exact same crop twice
@@ -818,12 +817,15 @@ def get_mandi_rates():
                 "price_type": "Latest Verified Benchmark Rate"
             })
 
-    return jsonify({
+    response_data = {
         "success": True,
         "source": source,
+        "source_label": "Live Data.gov.in APMC records" if source == "live_datagov" else "Fallback benchmark records; government API unavailable",
         "total_records": len(records),
         "records": records
-    })
+    }
+    MANDI_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
+    return jsonify(response_data)
 
 # ============================================================
 # PRE-COST / PRODUCTION ESTIMATE API
