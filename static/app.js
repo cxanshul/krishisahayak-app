@@ -52,9 +52,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
 
     loadBatches();
-    loadProfile();
+    loadProfile().finally(() => fetchWeather());
     fetchMandiRates();
-    fetchWeather();
     handlePreCostCalculation();
 });
 
@@ -1012,7 +1011,6 @@ async function loadProfile() {
         if (profile.latitude && profile.longitude) {
             document.getElementById("weather-latitude").value = profile.latitude;
             document.getElementById("weather-longitude").value = profile.longitude;
-            fetchWeather();
         }
     } catch (error) { console.warn("Profile unavailable", error); }
 }

@@ -6,6 +6,7 @@ import uuid
 from functools import wraps
 from io import BytesIO
 from datetime import datetime, date
+import time
 
 from PIL import Image
 from flask import Flask, render_template, request, jsonify, redirect, session, url_for
@@ -45,6 +46,8 @@ OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
+WEATHER_CACHE_TTL_SECONDS = 600
+WEATHER_CACHE = {}
 
 # ============================================================
 # CLIENTS
@@ -345,6 +348,13 @@ def get_weather():
     ):
         return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
 
+    cache_key = (round(latitude, 3), round(longitude, 3))
+    cached = WEATHER_CACHE.get(cache_key)
+    if cached and time.time() - cached["stored_at"] < WEATHER_CACHE_TTL_SECONDS:
+        response_data = dict(cached["data"])
+        response_data["cached"] = True
+        return jsonify(response_data)
+
     base_params = {
         "latitude": latitude,
         "longitude": longitude,
@@ -398,7 +408,7 @@ def get_weather():
                 "et0_mm": (daily.get("et0_fao_evapotranspiration") or [])[index]
             })
 
-        return jsonify({
+        response_data = {
             "success": True,
             "location": {
                 "latitude": latitude,
@@ -438,9 +448,18 @@ def get_weather():
             "alerts": weather_alerts(current, daily),
             "alerts_note": "Advisory rules based on Open-Meteo data; not official IMD warnings.",
             "source": "Open-Meteo"
-        })
+        }
+        WEATHER_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
+        return jsonify(response_data)
     except requests.RequestException as error:
         app.logger.warning("Open-Meteo request failed: %s", error)
+        if cached:
+            response_data = dict(cached["data"])
+            response_data["cached"] = True
+            response_data["stale"] = True
+            return jsonify(response_data)
+        if isinstance(error, requests.HTTPError) and error.response is not None and error.response.status_code == 429:
+            return jsonify({"success": False, "error": "Open-Meteo is rate-limiting requests. Please wait a minute and try again."}), 429
         return jsonify({"success": False, "error": "Weather service is temporarily unavailable. Please retry in a few seconds."}), 502
     except (KeyError, IndexError, TypeError, ValueError) as error:
         app.logger.exception("Unexpected Open-Meteo response")
