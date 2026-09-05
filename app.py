@@ -345,33 +345,39 @@ def get_weather():
     ):
         return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
 
-    params = {
+    base_params = {
         "latitude": latitude,
         "longitude": longitude,
         "timezone": "Asia/Kolkata",
         "forecast_days": 3,
         "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,rain,shortwave_radiation,direct_normal_irradiance",
-        "hourly": "soil_temperature_6cm,soil_moisture_3_to_9cm,shortwave_radiation,direct_normal_irradiance",
         "daily": "weather_code,precipitation_sum,rain_sum,et0_fao_evapotranspiration"
     }
     try:
-        response = None
-        last_error = None
-        for _ in range(2):
-            try:
-                response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=15.0)
-                response.raise_for_status()
-                break
-            except requests.RequestException as error:
-                last_error = error
-        if response is None or response.status_code != 200:
-            raise last_error or requests.RequestException("Open-Meteo returned no response")
+        response = requests.get(OPEN_METEO_FORECAST_URL, params=base_params, timeout=12.0)
+        response.raise_for_status()
         payload = response.json()
         current = payload.get("current", {})
         current_units = payload.get("current_units", {})
         daily = payload.get("daily", {})
         daily_units = payload.get("daily_units", {})
-        hourly = payload.get("hourly", {})
+        hourly = {}
+        try:
+            soil_response = requests.get(
+                OPEN_METEO_FORECAST_URL,
+                params={
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "timezone": "Asia/Kolkata",
+                    "forecast_days": 1,
+                    "hourly": "soil_temperature_6cm,soil_moisture_3_to_9cm,shortwave_radiation,direct_normal_irradiance"
+                },
+                timeout=12.0
+            )
+            soil_response.raise_for_status()
+            hourly = soil_response.json().get("hourly", {})
+        except requests.RequestException as error:
+            app.logger.warning("Open-Meteo soil/solar hourly request failed: %s", error)
         hourly_index = {time: index for index, time in enumerate(hourly.get("time", []))}
         current_hour = current.get("time")
         soil_index = hourly_index.get(current_hour, 0)
