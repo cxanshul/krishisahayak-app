@@ -23,17 +23,20 @@
             <button class="nav-item active" onclick="switchTab('pre-cost')">
                 <span class="icon">🧮</span> <span data-en="1. Pre-Cost Calculator" data-hi="१. फसल पूर्व लागत कैलकुलेटर">1. Pre-Cost Calculator</span>
             </button>
+            <button class="nav-item" onclick="switchTab('weather')">
+                <span class="icon">🌦️</span> <span data-en="2. Weather & Soil" data-hi="२. मौसम व मिट्टी">2. Weather & Soil</span>
+            </button>
             <button class="nav-item" onclick="switchTab('mandi')">
-                <span class="icon">🏛️</span> <span data-en="2. Mandi Market Rates" data-hi="२. व्यापक मंडी भाव">2. Mandi Market Rates</span>
+                <span class="icon">🏛️</span> <span data-en="3. Mandi Market Rates" data-hi="३. व्यापक मंडी भाव">3. Mandi Market Rates</span>
             </button>
             <button class="nav-item" onclick="switchTab('ledger-stored')">
-                <span class="icon">📦</span> <span data-en="3. Stored Produce" data-hi="३. भंडारित उपज">3. Stored Produce</span>
+                <span class="icon">📦</span> <span data-en="4. Stored Produce" data-hi="४. भंडारित उपज">4. Stored Produce</span>
             </button>
             <button class="nav-item" onclick="switchTab('ledger-sold')">
-                <span class="icon">💰</span> <span data-en="4. Settle Sale & Profit" data-hi="४. बिक्री व लाभ दर्ज करें">4. Settle Sale & Profit</span>
+                <span class="icon">💰</span> <span data-en="5. Settle Sale & Profit" data-hi="५. बिक्री व लाभ दर्ज करें">5. Settle Sale & Profit</span>
             </button>
             <button class="nav-item" onclick="switchTab('ledger-history')">
-                <span class="icon">📜</span> <span data-en="5. History & Next Crop" data-hi="५. उपज इतिहास व अगली फसल">5. History & Next Crop</span>
+                <span class="icon">📜</span> <span data-en="6. History & Next Crop" data-hi="६. उपज इतिहास व अगली फसल">6. History & Next Crop</span>
             </button>
             <button class="nav-item" onclick="switchTab('add-batch')">
                 <span class="icon">➕</span> <span data-en="Register Produce AI" data-hi="उपज दर्ज व एआई जांच">Register Produce AI</span>
@@ -48,7 +51,7 @@
             <div class="farmer-profile">
                 <span class="status-indicator"></span>
                 <span id="display-farmer">Signed in</span>
-                <button class="btn-logout" onclick="logout()" title="Log out">Log out</button>
+                <button class="btn-profile" onclick="openProfile()" title="Open profile">Profile</button>
             </div>
             <button class="btn-delete-data" onclick="deleteAllProduce()" type="button">Delete my crop data</button>
         </div>
@@ -203,6 +206,52 @@
                         </div>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- TAB 2: WEATHER AND AGRONOMY -->
+        <div id="tab-weather" class="tab-panel">
+            <div class="form-container weather-panel">
+                <div class="form-header">
+                    <div>
+                        <h3 data-en="Weather, Soil & Irrigation Signals" data-hi="मौसम, मिट्टी और सिंचाई संकेत">Weather, Soil & Irrigation Signals</h3>
+                        <p class="subtitle" data-en="Open-Meteo data for any farm location in India, shown in India Standard Time." data-hi="भारत के किसी भी खेत के लिए Open-Meteo डेटा, भारतीय समय के अनुसार।">Open-Meteo data for any farm location in India, shown in India Standard Time.</p>
+                    </div>
+                    <span class="weather-source">Open-Meteo</span>
+                </div>
+                <div class="weather-location-form">
+                    <label for="weather-latitude">Latitude</label>
+                    <input id="weather-latitude" type="number" step="any" value="28.6139" min="6" max="37.5">
+                    <label for="weather-longitude">Longitude</label>
+                    <input id="weather-longitude" type="number" step="any" value="77.2090" min="68" max="98">
+                    <button class="btn-secondary" type="button" onclick="useFarmLocation()">📍 Use my location</button>
+                    <button class="btn-secondary" type="button" onclick="fetchWeather()">↻ Refresh weather</button>
+                </div>
+                <p id="weather-status" class="weather-status">Loading Delhi weather...</p>
+                <div id="weather-alerts" class="weather-alerts"></div>
+                <div id="weather-metrics" class="weather-metrics-grid"></div>
+                <div class="weather-forecast-section">
+                    <h4>Rainfall & irrigation outlook</h4>
+                    <div class="ledger-table-container">
+                        <table class="mandi-table weather-table">
+                            <thead><tr><th>Date</th><th>Condition</th><th>Rainfall</th><th>ET0</th></tr></thead>
+                            <tbody id="weather-forecast"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="weather-forecast-section">
+                    <div class="section-bar">
+                        <h4>Seasonal precipitation outlook</h4>
+                        <button class="btn-secondary" type="button" onclick="fetchSeasonalWeather()">Refresh seasonal view</button>
+                    </div>
+                    <p id="seasonal-status" class="weather-status">Loading monthly ensemble trends...</p>
+                    <div class="ledger-table-container">
+                        <table class="mandi-table weather-table">
+                            <thead><tr><th>Month</th><th>Expected precipitation</th><th>Mean temperature</th></tr></thead>
+                            <tbody id="seasonal-forecast"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -424,6 +473,19 @@
         </div>
 
     </main>
+
+    <div id="profile-modal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+        <div class="profile-card">
+            <div class="form-header"><div><h3 id="profile-title">Farmer profile</h3><p class="subtitle">Update your name and farm weather location.</p></div><button class="btn-close-profile" onclick="closeProfile()" type="button">×</button></div>
+            <form onsubmit="saveProfile(event)">
+                <label for="profile-name">Farmer name</label><input id="profile-name" type="text" required>
+                <div class="auth-location-grid"><div><label for="profile-latitude">Latitude</label><input id="profile-latitude" type="number" step="any" min="6" max="37.5" required></div><div><label for="profile-longitude">Longitude</label><input id="profile-longitude" type="number" step="any" min="68" max="98" required></div></div>
+                <label for="profile-location-name">Location label</label><input id="profile-location-name" type="text" placeholder="Village / district name">
+                <div class="profile-actions"><button class="btn-secondary" type="button" onclick="useProfileLocation()">Use my location</button><button class="auth-submit" type="submit">Save profile</button></div>
+            </form>
+            <div class="profile-danger"><button class="btn-delete-data" onclick="deleteMyAccountData()" type="button">Delete my crop and profile data</button><button class="btn-logout" onclick="logout()" type="button">Log out</button></div>
+        </div>
+    </div>
 
     <!-- FLOATING AI ASSISTANT -->
     <div id="assistant-bubble" class="assistant-bubble" onclick="toggleAssistant()">

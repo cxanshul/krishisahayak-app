@@ -41,3 +41,14 @@ CREATE TABLE IF NOT EXISTS produce_batches (
 
 ALTER TABLE produce_batches ADD COLUMN IF NOT EXISTS farmer_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS produce_batches_farmer_id_idx ON produce_batches (farmer_id);
+
+CREATE TABLE IF NOT EXISTS farmer_profiles (
+    farmer_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    full_name TEXT NOT NULL DEFAULT '',
+    latitude NUMERIC,
+    longitude NUMERIC,
+    location_name TEXT DEFAULT '',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS farmer_profiles_farmer_id_idx ON farmer_profiles (farmer_id);

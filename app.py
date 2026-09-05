@@ -41,6 +41,11 @@ SUPABASE_URL = env_value("SUPABASE_URL")
 SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 
+OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
+
 # ============================================================
 # CLIENTS
 # ============================================================
@@ -119,6 +124,69 @@ def decode_image(image_base64):
         print(f"Image decode error: {e}")
         return None
 
+def weather_description(weather_code):
+    descriptions = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail"
+    }
+    return descriptions.get(int(weather_code or 0), "Weather data available")
+
+def weather_alerts(current, daily):
+    """Create advisory flags, not official IMD warnings, from forecast signals."""
+    alerts = []
+    weather_code = int(current.get("weather_code") or 0)
+    wind_speed = safe_float(current.get("wind_speed_10m"))
+    temperature = safe_float(current.get("temperature_2m"))
+    rain_today = safe_float((daily.get("rain_sum") or [0])[0])
+    precipitation_today = safe_float((daily.get("precipitation_sum") or [0])[0])
+
+    if weather_code in {65, 82, 95, 96, 99} or rain_today >= 20 or precipitation_today >= 30:
+        alerts.append({"level": "high", "message": "Heavy rain or storm possible. Protect harvested produce and avoid spraying."})
+    elif weather_code in {61, 63, 80, 81} or rain_today >= 5:
+        alerts.append({"level": "medium", "message": "Rain possible. Check field drainage before irrigation."})
+    if wind_speed >= 40:
+        alerts.append({"level": "high", "message": "High wind risk. Secure seedlings, shade nets, and loose farm equipment."})
+    if temperature <= 2:
+        alerts.append({"level": "high", "message": "Frost risk. Protect sensitive seedlings and flowering crops overnight."})
+    return alerts
+
+def reverse_geocode_india(latitude, longitude):
+    """Resolve a coordinate to a district using Nominatim's free reverse lookup."""
+    try:
+        response = requests.get(
+            NOMINATIM_REVERSE_URL,
+            params={"lat": latitude, "lon": longitude, "format": "jsonv2", "zoom": 10, "addressdetails": 1},
+            headers={"User-Agent": "KrishiSahayak/1.0 (student agriculture project)"},
+            timeout=3.0
+        )
+        response.raise_for_status()
+        address = response.json().get("address", {})
+        return {
+            "district": address.get("state_district") or address.get("county"),
+            "state": address.get("state"),
+            "country": address.get("country"),
+            "display_name": response.json().get("display_name"),
+            "source": "OpenStreetMap Nominatim"
+        }
+    except (requests.RequestException, ValueError, TypeError):
+        return {"district": None, "state": None, "country": "India", "display_name": None, "source": None}
+
 # ============================================================
 # ROUTES
 # ============================================================
@@ -145,6 +213,20 @@ def user_batches(user_id):
             app.logger.warning("Could not load user batches: %s", error)
     return [batch for batch in DATA_STORE if batch.get("farmer_id") == user_id]
 
+def default_profile(user):
+    return {"farmer_id": user["id"], "full_name": "", "latitude": None, "longitude": None, "location_name": ""}
+
+def load_profile(user):
+    profile = default_profile(user)
+    if supabase:
+        try:
+            result = supabase.table("farmer_profiles").select("*").eq("farmer_id", user["id"]).limit(1).execute()
+            if result.data:
+                profile.update(result.data[0])
+        except Exception as error:
+            app.logger.warning("Could not load farmer profile: %s", error)
+    return profile
+
 @app.route("/auth")
 def auth_page():
     if current_user():
@@ -158,6 +240,11 @@ def register():
     data = request.json or {}
     email = str(data.get("email", "")).strip().lower()
     password = str(data.get("password", ""))
+    full_name = str(data.get("full_name", "")).strip()
+    latitude = safe_float(data.get("latitude"), None)
+    longitude = safe_float(data.get("longitude"), None)
+    if latitude is not None and longitude is not None and not (INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"] and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]):
+        return jsonify({"error": "Farm coordinates must be within India."}), 400
     if not email or len(password) < 6:
         return jsonify({"error": "Enter a valid email and a password of at least 6 characters."}), 400
     try:
@@ -166,6 +253,10 @@ def register():
         auth_session = getattr(result, "session", None)
         if not user:
             return jsonify({"error": "Registration could not be completed."}), 400
+        try:
+            supabase.table("farmer_profiles").upsert({"farmer_id": user.id, "full_name": full_name, "latitude": latitude, "longitude": longitude}).execute()
+        except Exception as error:
+            app.logger.warning("Could not create farmer profile: %s", error)
         if not auth_session:
             return jsonify({"message": "Account created. Check your email to confirm it, then log in."})
         session["user"] = {"id": user.id, "email": user.email}
@@ -186,6 +277,9 @@ def login():
         if not user:
             return jsonify({"error": "Login failed. Check your email and password."}), 401
         session["user"] = {"id": user.id, "email": user.email}
+        profile = load_profile(session["user"])
+        if profile.get("full_name"):
+            session["user"]["full_name"] = profile["full_name"]
         return jsonify({"success": True, "user": session["user"]})
     except Exception:
         return jsonify({"error": "Login failed. Check your email and password."}), 401
@@ -199,6 +293,185 @@ def logout():
 @require_auth
 def home():
     return render_template("index.html")
+
+@app.route("/api/profile", methods=["GET", "PUT", "DELETE"])
+@require_auth
+def profile():
+    user = current_user()
+    if request.method == "GET":
+        return jsonify({"success": True, "profile": load_profile(user)})
+    if request.method == "DELETE":
+        if supabase:
+            try:
+                supabase.table("farmer_profiles").delete().eq("farmer_id", user["id"]).execute()
+                supabase.table("produce_batches").delete().eq("farmer_id", user["id"]).execute()
+            except Exception as error:
+                app.logger.exception("Could not delete farmer-owned data")
+                return jsonify({"success": False, "error": str(error)}), 502
+        session.clear()
+        return jsonify({"success": True})
+
+    data = request.json or {}
+    full_name = str(data.get("full_name", "")).strip()
+    latitude = safe_float(data.get("latitude"), None)
+    longitude = safe_float(data.get("longitude"), None)
+    if latitude is None or longitude is None:
+        return jsonify({"success": False, "error": "Enter both latitude and longitude."}), 400
+    if not (INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"] and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]):
+        return jsonify({"success": False, "error": "Farm coordinates must be within India."}), 400
+    location_name = str(data.get("location_name", "")).strip()
+    updated = {"farmer_id": user["id"], "full_name": full_name, "latitude": latitude, "longitude": longitude, "location_name": location_name, "updated_at": datetime.utcnow().isoformat()}
+    if supabase:
+        try:
+            result = supabase.table("farmer_profiles").upsert(updated).execute()
+            profile_data = result.data[0] if result.data else updated
+        except Exception as error:
+            return jsonify({"success": False, "error": f"Profile could not be saved: {error}"}), 502
+    else:
+        profile_data = updated
+    session["user"]["full_name"] = full_name
+    return jsonify({"success": True, "profile": profile_data})
+
+@app.route("/api/weather", methods=["GET"])
+def get_weather():
+    """Return India-local weather and agronomic indicators from Open-Meteo."""
+    latitude = safe_float(request.args.get("latitude"), None)
+    longitude = safe_float(request.args.get("longitude"), None)
+    if latitude is None or longitude is None:
+        return jsonify({"success": False, "error": "latitude and longitude are required."}), 400
+    if not (
+        INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"]
+        and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]
+    ):
+        return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
+
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "timezone": "Asia/Kolkata",
+        "forecast_days": 3,
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,rain,shortwave_radiation,direct_normal_irradiance",
+        "hourly": "soil_temperature_6cm,soil_moisture_3_to_9cm,shortwave_radiation,direct_normal_irradiance",
+        "daily": "weather_code,precipitation_sum,rain_sum,et0_fao_evapotranspiration"
+    }
+    try:
+        response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=8.0)
+        response.raise_for_status()
+        payload = response.json()
+        current = payload.get("current", {})
+        current_units = payload.get("current_units", {})
+        daily = payload.get("daily", {})
+        daily_units = payload.get("daily_units", {})
+        hourly = payload.get("hourly", {})
+        hourly_index = {time: index for index, time in enumerate(hourly.get("time", []))}
+        current_hour = current.get("time")
+        soil_index = hourly_index.get(current_hour, 0)
+
+        def hourly_value(name):
+            values = hourly.get(name, [])
+            return values[soil_index] if soil_index < len(values) else None
+
+        forecast = []
+        for index, forecast_date in enumerate(daily.get("time", [])):
+            code = (daily.get("weather_code") or [])[index]
+            forecast.append({
+                "date": forecast_date,
+                "weather_code": code,
+                "condition": weather_description(code),
+                "rainfall_mm": (daily.get("rain_sum") or [])[index],
+                "precipitation_mm": (daily.get("precipitation_sum") or [])[index],
+                "et0_mm": (daily.get("et0_fao_evapotranspiration") or [])[index]
+            })
+
+        return jsonify({
+            "success": True,
+            "location": {
+                "latitude": latitude,
+                "longitude": longitude,
+                "timezone": payload.get("timezone", "Asia/Kolkata"),
+                **reverse_geocode_india(latitude, longitude)
+            },
+            "observed_at": current_hour,
+            "current": {
+                "temperature_c": current.get("temperature_2m"),
+                "relative_humidity_percent": current.get("relative_humidity_2m"),
+                "wind_speed_kmh": current.get("wind_speed_10m"),
+                "rainfall_mm": current.get("rain"),
+                "precipitation_mm": current.get("precipitation"),
+                "shortwave_radiation_w_m2": current.get("shortwave_radiation"),
+                "direct_normal_irradiance_w_m2": current.get("direct_normal_irradiance"),
+                "weather_code": current.get("weather_code"),
+                "condition": weather_description(current.get("weather_code")),
+                "units": {
+                    "temperature": current_units.get("temperature_2m", "°C"),
+                    "humidity": current_units.get("relative_humidity_2m", "%"),
+                    "wind_speed": current_units.get("wind_speed_10m", "km/h"),
+                    "solar_radiation": current_units.get("shortwave_radiation", "W/m²"),
+                    "direct_normal_irradiance": current_units.get("direct_normal_irradiance", "W/m²")
+                }
+            },
+            "agronomy": {
+                "et0_mm": forecast[0]["et0_mm"] if forecast else None,
+                "et0_unit": daily_units.get("et0_fao_evapotranspiration", "mm"),
+                "soil_temperature_6cm_c": hourly_value("soil_temperature_6cm"),
+                "soil_moisture_3_to_9cm_m3_m3": hourly_value("soil_moisture_3_to_9cm"),
+                "shortwave_radiation_w_m2": hourly_value("shortwave_radiation"),
+                "direct_normal_irradiance_w_m2": hourly_value("direct_normal_irradiance"),
+                "soil_moisture_note": "Volumetric water content for the 3-9 cm root zone"
+            },
+            "forecast": forecast,
+            "alerts": weather_alerts(current, daily),
+            "alerts_note": "Advisory rules based on Open-Meteo data; not official IMD warnings.",
+            "source": "Open-Meteo"
+        })
+    except requests.RequestException as error:
+        app.logger.warning("Open-Meteo request failed: %s", error)
+        return jsonify({"success": False, "error": "Weather service is temporarily unavailable."}), 502
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        app.logger.exception("Unexpected Open-Meteo response")
+        return jsonify({"success": False, "error": f"Could not read weather data: {type(error).__name__}"}), 502
+
+@app.route("/api/weather/seasonal", methods=["GET"])
+def get_seasonal_weather():
+    """Return monthly precipitation trends from Open-Meteo's seasonal ensemble."""
+    latitude = safe_float(request.args.get("latitude"), None)
+    longitude = safe_float(request.args.get("longitude"), None)
+    if latitude is None or longitude is None:
+        return jsonify({"success": False, "error": "latitude and longitude are required."}), 400
+    if not (INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"] and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]):
+        return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
+
+    try:
+        response = requests.get(
+            OPEN_METEO_SEASONAL_URL,
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "timezone": "Asia/Kolkata",
+                "monthly": "precipitation_mean,temperature_2m_mean"
+            },
+            timeout=15.0
+        )
+        response.raise_for_status()
+        payload = response.json()
+        monthly = payload.get("monthly", {})
+        precipitation = monthly.get("precipitation_mean", [])
+        temperatures = monthly.get("temperature_2m_mean", [])
+        months = monthly.get("time", [])
+        return jsonify({
+            "success": True,
+            "location": {"latitude": latitude, "longitude": longitude, "timezone": payload.get("timezone", "Asia/Kolkata")},
+            "monthly": [
+                {"month": months[index], "precipitation_mm": precipitation[index], "temperature_c": temperatures[index]}
+                for index in range(min(len(months), len(precipitation), len(temperatures)))
+            ],
+            "source": "Open-Meteo Seasonal API"
+        })
+    except requests.RequestException as error:
+        app.logger.warning("Open-Meteo seasonal request failed: %s", error)
+        return jsonify({"success": False, "error": "Seasonal forecast is temporarily unavailable."}), 502
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        return jsonify({"success": False, "error": f"Could not read seasonal data: {type(error).__name__}"}), 502
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth

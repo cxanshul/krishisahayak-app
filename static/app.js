@@ -52,7 +52,9 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
 
     loadBatches();
+    loadProfile();
     fetchMandiRates();
+    fetchWeather();
     handlePreCostCalculation();
 });
 
@@ -925,4 +927,134 @@ async function sendAssistantMessage() {
         }
     }
     chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+async function fetchWeather() {
+    const status = document.getElementById("weather-status");
+    const metrics = document.getElementById("weather-metrics");
+    const forecast = document.getElementById("weather-forecast");
+    if (!status || !metrics || !forecast) return;
+
+    const latitude = document.getElementById("weather-latitude")?.value || "28.6139";
+    const longitude = document.getElementById("weather-longitude")?.value || "77.2090";
+    status.textContent = "Loading weather and soil indicators...";
+    try {
+        const response = await fetch(`/api/weather?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Weather request failed");
+
+        const current = data.current;
+        const agronomy = data.agronomy;
+        const place = [data.location.district, data.location.state].filter(Boolean).join(", ");
+        status.textContent = `${place || `${data.location.latitude.toFixed(4)}, ${data.location.longitude.toFixed(4)}`} · ${data.observed_at || "Latest observation"} IST · ${current.condition}`;
+        const alerts = document.getElementById("weather-alerts");
+        if (alerts) {
+            alerts.innerHTML = (data.alerts || []).map(alert => `<div class="weather-alert ${alert.level}">⚠️ ${alert.message}</div>`).join("") || `<div class="weather-alert clear">✓ No rule-based weather warnings right now.</div>`;
+        }
+        metrics.innerHTML = [
+            ["Temperature", `${current.temperature_c ?? "-"} °C`, "🌡️"],
+            ["Humidity", `${current.relative_humidity_percent ?? "-"} %`, "💧"],
+            ["Wind speed", `${current.wind_speed_kmh ?? "-"} km/h`, "💨"],
+            ["Rain now", `${current.rainfall_mm ?? "-"} mm`, "🌧️"],
+            ["Solar radiation", `${current.shortwave_radiation_w_m2 ?? "-"} W/m²`, "☀️"],
+            ["Direct normal irradiance", `${current.direct_normal_irradiance_w_m2 ?? "-"} W/m²`, "🔆"],
+            ["ET0 today", `${agronomy.et0_mm ?? "-"} mm`, "☀️"],
+            ["Soil at 6 cm", `${agronomy.soil_temperature_6cm_c ?? "-"} °C`, "🌱"],
+            ["Root-zone moisture", `${agronomy.soil_moisture_3_to_9cm_m3_m3 ?? "-"} m³/m³`, "🪴"]
+        ].map(([label, value, icon]) => `<div class="weather-metric"><span class="weather-metric-icon">${icon}</span><span class="weather-metric-label">${label}</span><strong>${value}</strong></div>`).join("");
+        forecast.innerHTML = data.forecast.map(day => `<tr><td>${day.date}</td><td>${day.condition}</td><td>${day.rainfall_mm ?? "-"} mm</td><td>${day.et0_mm ?? "-"} mm</td></tr>`).join("");
+        fetchSeasonalWeather();
+    } catch (error) {
+        status.textContent = error.message;
+        metrics.innerHTML = "";
+        forecast.innerHTML = "<tr><td colspan=\"4\">Weather data could not be loaded. Please try again.</td></tr>";
+    }
+}
+
+function useFarmLocation() {
+    if (!navigator.geolocation) {
+        showToast("Location is not supported by this browser.", "error");
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(position => {
+        document.getElementById("weather-latitude").value = position.coords.latitude.toFixed(6);
+        document.getElementById("weather-longitude").value = position.coords.longitude.toFixed(6);
+        fetchWeather();
+    }, () => showToast("Could not read your location. Enter coordinates manually.", "error"));
+}
+
+async function fetchSeasonalWeather() {
+    const status = document.getElementById("seasonal-status");
+    const table = document.getElementById("seasonal-forecast");
+    if (!status || !table) return;
+    const latitude = document.getElementById("weather-latitude")?.value || "28.6139";
+    const longitude = document.getElementById("weather-longitude")?.value || "77.2090";
+    status.textContent = "Loading seasonal ensemble trends...";
+    try {
+        const response = await fetch(`/api/weather/seasonal?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Seasonal request failed");
+        status.textContent = `${data.source} · monthly precipitation guidance, not an official IMD warning.`;
+        table.innerHTML = data.monthly.map(month => `<tr><td>${month.month}</td><td>${month.precipitation_mm ?? "-"} mm</td><td>${month.temperature_c ?? "-"} °C</td></tr>`).join("");
+    } catch (error) {
+        status.textContent = error.message;
+        table.innerHTML = "<tr><td colspan=\"3\">Seasonal data could not be loaded.</td></tr>";
+    }
+}
+
+async function loadProfile() {
+    try {
+        const response = await fetch("/api/profile");
+        if (!response.ok) return;
+        const data = await response.json();
+        const profile = data.profile || {};
+        document.getElementById("display-farmer").textContent = profile.full_name || "Farmer profile";
+        if (profile.latitude && profile.longitude) {
+            document.getElementById("weather-latitude").value = profile.latitude;
+            document.getElementById("weather-longitude").value = profile.longitude;
+            fetchWeather();
+        }
+    } catch (error) { console.warn("Profile unavailable", error); }
+}
+
+async function openProfile() {
+    const response = await fetch("/api/profile");
+    const data = await response.json();
+    const profile = data.profile || {};
+    document.getElementById("profile-name").value = profile.full_name || "";
+    document.getElementById("profile-latitude").value = profile.latitude || "";
+    document.getElementById("profile-longitude").value = profile.longitude || "";
+    document.getElementById("profile-location-name").value = profile.location_name || "";
+    document.getElementById("profile-modal").classList.remove("hidden");
+}
+
+function closeProfile() { document.getElementById("profile-modal").classList.add("hidden"); }
+
+function useProfileLocation() {
+    navigator.geolocation?.getCurrentPosition(position => {
+        document.getElementById("profile-latitude").value = position.coords.latitude.toFixed(6);
+        document.getElementById("profile-longitude").value = position.coords.longitude.toFixed(6);
+    });
+}
+
+async function saveProfile(event) {
+    event.preventDefault();
+    const payload = { full_name: document.getElementById("profile-name").value, latitude: document.getElementById("profile-latitude").value, longitude: document.getElementById("profile-longitude").value, location_name: document.getElementById("profile-location-name").value };
+    const response = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await response.json();
+    if (!response.ok || !data.success) { showToast(data.error || "Profile could not be saved.", "error"); return; }
+    closeProfile();
+    document.getElementById("display-farmer").textContent = payload.full_name;
+    document.getElementById("weather-latitude").value = payload.latitude;
+    document.getElementById("weather-longitude").value = payload.longitude;
+    fetchWeather();
+    showToast("Profile and farm location updated.", "success");
+}
+
+async function deleteMyAccountData() {
+    if (!window.confirm("Delete only your crop records and profile data? This cannot be undone.")) return;
+    const response = await fetch("/api/profile", { method: "DELETE" });
+    const data = await response.json();
+    if (!response.ok || !data.success) { showToast(data.error || "Deletion failed.", "error"); return; }
+    window.location.href = "/auth";
 }

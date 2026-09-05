@@ -24,6 +24,15 @@
             <h2 id="auth-title">Welcome back</h2>
             <p id="auth-subtitle" class="auth-subtitle">Log in to access your farm dashboard.</p>
             <form id="auth-form" onsubmit="submitAuth(event)">
+                <div id="register-fields" class="register-fields hidden">
+                    <label for="auth-name">Farmer name</label>
+                    <input id="auth-name" type="text" autocomplete="name" placeholder="Your name">
+                    <div class="auth-location-grid">
+                        <div><label for="auth-latitude">Farm latitude</label><input id="auth-latitude" type="number" step="any" min="6" max="37.5" placeholder="28.6139"></div>
+                        <div><label for="auth-longitude">Farm longitude</label><input id="auth-longitude" type="number" step="any" min="68" max="98" placeholder="77.2090"></div>
+                    </div>
+                    <button class="btn-secondary" type="button" onclick="useSignupLocation()">Use my current location</button>
+                </div>
                 <label for="auth-email">Email address</label>
                 <input id="auth-email" type="email" autocomplete="email" required placeholder="you@example.com">
                 <label for="auth-password">Password</label>
@@ -43,6 +52,10 @@
             document.getElementById('auth-subtitle').innerText = mode === 'login' ? 'Log in to access your farm dashboard.' : 'Your crop records will be saved to your Supabase account.';
             document.getElementById('auth-submit').innerText = mode === 'login' ? 'Log in' : 'Create account';
             document.getElementById('auth-password').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+            document.getElementById('register-fields').classList.toggle('hidden', mode !== 'register');
+            document.getElementById('auth-name').required = mode === 'register';
+            document.getElementById('auth-latitude').required = mode === 'register';
+            document.getElementById('auth-longitude').required = mode === 'register';
             document.getElementById('auth-message').innerText = '';
         }
         async function submitAuth(event) {
@@ -58,7 +71,10 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         email: document.getElementById('auth-email').value,
-                        password: document.getElementById('auth-password').value
+                        password: document.getElementById('auth-password').value,
+                        full_name: document.getElementById('auth-name').value,
+                        latitude: document.getElementById('auth-latitude').value,
+                        longitude: document.getElementById('auth-longitude').value
                     })
                 });
                 const data = await response.json();
@@ -75,6 +91,13 @@
             } finally {
                 button.disabled = false;
             }
+        }
+        function useSignupLocation() {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition(position => {
+                document.getElementById('auth-latitude').value = position.coords.latitude.toFixed(6);
+                document.getElementById('auth-longitude').value = position.coords.longitude.toFixed(6);
+            });
         }
     </script>
 </body>
