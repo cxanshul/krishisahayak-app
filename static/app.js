@@ -264,7 +264,10 @@ async function fetchMandiRates() {
         mandiRecordsCache = data.records || [];
 
         if (alertBox) {
-            if (data.source === "live_datagov") {
+            if (data.source === "live_mandi_api") {
+                alertBox.className = "mandi-alert live";
+                alertBox.innerText = "🟢 Displaying fresh daily mandi rates from the keyless Mandi API.";
+            } else if (data.source === "live_datagov") {
                 alertBox.className = "mandi-alert live";
                 alertBox.innerText = "🟢 Displaying live Data.gov.in APMC mandi records.";
             } else if (data.source === "secondary_gov") {

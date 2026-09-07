@@ -40,6 +40,8 @@ GEMINI_KEY = env_value("GEMINI_API_KEY")
 DATAGOV_KEY = env_value("DATAGOV_API_KEY")
 DATAGOV_RESOURCE_ID = env_value("DATAGOV_RESOURCE_ID", "9ef84268-d588-465a-a308-a864a43d0070")
 DATAGOV_MAX_RESULTS = max(1, min(int(env_value("DATAGOV_MAX_RESULTS", "1000")), 1000))
+MANDI_API_URL = env_value("MANDI_API_URL", "https://mandi-api.onrender.com/v1")
+MANDI_SUPPORTED_STATES = ("Maharashtra", "Uttar Pradesh", "Punjab", "Madhya Pradesh", "Karnataka")
 SECONDARY_MANDI_API_URL = env_value("SECONDARY_MANDI_API_URL")
 SECONDARY_AI_KEY = env_value("SECONDARY_AI_API_KEY")
 SECONDARY_AI_URL = env_value("SECONDARY_AI_API_URL", "https://api.openai.com/v1/chat/completions")
@@ -785,6 +787,54 @@ Recommend 2 optimal crop rotation plans in valid JSON:
 # MULTI-ENDPOINT MANDI RATES API
 # ============================================================
 
+def fetch_open_mandi_records(commodity="", state="", district=""):
+    """Fetch fresh records from the keyless mandi service."""
+    states = [state] if state else list(MANDI_SUPPORTED_STATES)
+    records = []
+    seen = set()
+
+    for selected_state in states:
+        params = {}
+        if selected_state:
+            params["state"] = selected_state
+        if commodity:
+            params["commodity"] = commodity
+
+        response = requests.get(f"{MANDI_API_URL}/prices", params=params, timeout=20.0)
+        response.raise_for_status()
+        payload = response.json()
+        provider_records = payload.get("data", []) if isinstance(payload, dict) else []
+        if not isinstance(provider_records, list):
+            continue
+
+        for item in provider_records:
+            item_district = str(item.get("district", ""))
+            if district and district.lower() not in item_district.lower():
+                continue
+            arrival_date = item.get("arrival_date") or date.today().strftime("%Y-%m-%d")
+            signature = (
+                item.get("state"), item_district, item.get("market"),
+                item.get("commodity"), item.get("variety"), arrival_date
+            )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            records.append({
+                "state": item.get("state", ""),
+                "district": item_district,
+                "market": item.get("market", ""),
+                "commodity": item.get("commodity", ""),
+                "variety": item.get("variety", "General"),
+                "grade": item.get("grade", ""),
+                "min_price": safe_float(item.get("min_price", 0)),
+                "max_price": safe_float(item.get("max_price", 0)),
+                "modal_price": safe_float(item.get("modal_price", 0)),
+                "arrival_date": arrival_date,
+                "is_today": arrival_date == date.today().strftime("%Y-%m-%d"),
+                "price_type": "Live Mandi API"
+            })
+    return records
+
 @app.route("/api/market/mandi-rates", methods=["GET"])
 def get_mandi_rates():
     commodity = request.args.get("commodity", "").strip()
@@ -801,7 +851,14 @@ def get_mandi_rates():
     records = []
     source = "unavailable"
 
-    if DATAGOV_KEY:
+    try:
+        records = fetch_open_mandi_records(commodity, state, district)
+        if records:
+            source = "live_mandi_api"
+    except (requests.RequestException, ValueError, TypeError) as error:
+        app.logger.warning("Keyless mandi API fetch failed: %s", error)
+
+    if not records and DATAGOV_KEY:
         try:
             params = {"api-key": DATAGOV_KEY, "format": "json", "limit": DATAGOV_MAX_RESULTS}
             if state:
@@ -891,7 +948,8 @@ def get_mandi_rates():
         "success": bool(records),
         "source": source,
         "source_label": (
-            "Live Data.gov.in APMC records" if source == "live_datagov"
+            "Live keyless Mandi API records" if source == "live_mandi_api"
+            else "Live Data.gov.in APMC records" if source == "live_datagov"
             else "Secondary government mandi API records" if source == "secondary_gov"
             else "Live government mandi data is currently unavailable"
         ),
