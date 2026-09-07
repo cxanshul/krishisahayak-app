@@ -39,7 +39,7 @@
                 <span class="icon">📜</span> <span data-en="6. History & Next Crop" data-hi="६. उपज इतिहास व अगली फसल">6. History & Next Crop</span>
             </button>
             <button class="nav-item" onclick="switchTab('add-batch')">
-                <span class="icon">➕</span> <span data-en="Register Produce AI" data-hi="उपज दर्ज व एआई जांच">Register Produce AI</span>
+                <span class="icon">➕</span> <span data-en="Register Crops" data-hi="फसल दर्ज करें">Register Crops</span>
             </button>
         </nav>
 
@@ -375,10 +375,14 @@
         <div id="tab-add-batch" class="tab-panel">
             <div class="form-container">
                 <div class="form-header">
-                    <h3 data-en="Register New Produce for Quality & Spoilage AI" data-hi="गुणवत्ता व सड़न जांच हेतु नई उपज दर्ज करें">Register New Produce for Quality & Spoilage AI</h3>
+                    <h3 data-en="Register Crops with AI Analysis" data-hi="एआई जांच के साथ फसल दर्ज करें">Register Crops with AI Analysis</h3>
                 </div>
 
                 <form id="produce-form" onsubmit="handleProduceSubmit(event)">
+                    <div class="crop-registration-mode">
+                        <label class="crop-mode-option"><input type="radio" name="crop_status" value="harvested" checked onchange="toggleCropRegistrationMode()"><span>Harvested Crop Registration</span></label>
+                        <label class="crop-mode-option"><input type="radio" name="crop_status" value="growing" onchange="toggleCropRegistrationMode()"><span>Current Growing Crop</span></label>
+                    </div>
                     <div class="form-grid">
                         <div class="form-group">
                             <label data-en="Produce / Crop Name" data-hi="फसल / उपज का नाम">Produce / Crop Name</label>
@@ -405,7 +409,11 @@
                         </div>
                         <div class="form-group">
                             <label data-en="Harvest Date" data-hi="कटाई की तारीख">Harvest Date</label>
-                            <input type="date" id="harvest_date" required>
+                            <input type="date" id="harvest_date">
+                        </div>
+                        <div class="form-group growing-only hidden">
+                            <label>Planting Date</label>
+                            <input type="date" id="planting_date">
                         </div>
                         <div class="form-group">
                             <label data-en="Storage Facility" data-hi="भंडारण स्थिति">Storage Facility</label>
@@ -455,7 +463,7 @@
                     </div>
 
                     <button type="submit" id="btn-submit-produce" class="btn-primary-action">
-                        ⚡ <span id="submit-text" data-en="Analyze Quality and Predict Spoilage" data-hi="गुणवत्ता जांचें एवं सड़न का अनुमान लगाएं">Analyze Quality and Predict Spoilage</span>
+                        ⚡ <span id="submit-text" data-en="Analyze Quality and Register Crop" data-hi="गुणवत्ता जांचें एवं फसल दर्ज करें">Analyze Quality and Register Crop</span>
                     </button>
                 </form>
             </div>

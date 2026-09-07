@@ -502,55 +502,6 @@ def get_weather():
         app.logger.exception("Unexpected AccuWeather response")
         return jsonify({"success": False, "error": "Could not read AccuWeather data. Please try again."}), 502
 
-@app.route("/api/weather/action-suggestion", methods=["POST"])
-def weather_action_suggestion():
-    data = request.json or {}
-    latitude = safe_float(data.get("latitude"), None)
-    longitude = safe_float(data.get("longitude"), None)
-    current = data.get("current") or {}
-    forecast = data.get("forecast") or []
-    crop = str(data.get("crop", "the crop")).strip() or "the crop"
-    if latitude is None or longitude is None or not (
-        INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"]
-        and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]
-    ):
-        return jsonify({"success": False, "error": "A valid GPS location is required."}), 400
-    if not current or not forecast:
-        return jsonify({"success": False, "error": "Load current weather before generating an action."}), 400
-    if not gemini_client:
-        return jsonify({"success": False, "error": "Gemini AI is not configured on the server."}), 503
-
-    weather_context = {
-        "location": {"latitude": latitude, "longitude": longitude},
-        "current": current,
-        "today": forecast[0],
-        "tomorrow": forecast[1] if len(forecast) > 1 else forecast[0]
-    }
-    prompt = f"""
-You are an agricultural weather advisor. Give one practical action to protect {crop} from weather imbalance.
-Use only the supplied GPS weather data for today and tomorrow. Do not invent conditions, dates, or measurements.
-Return exactly one short sentence, maximum 25 words, starting with an action verb. Do not use bullets, headings, or disclaimers.
-
-GPS weather data:
-{json.dumps(weather_context, ensure_ascii=False)}
-"""
-    try:
-        response = gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                max_output_tokens=80,
-                thinking_config=types.ThinkingConfig(thinking_level="low")
-            )
-        )
-        suggestion = (response.text or "").strip().replace("\n", " ")
-        if not suggestion:
-            return jsonify({"success": False, "error": "Gemini returned no action suggestion."}), 502
-        return jsonify({"success": True, "suggestion": suggestion, "source": "Gemini AI"})
-    except Exception as error:
-        app.logger.warning("Weather action suggestion failed: %s", error)
-        return jsonify({"success": False, "error": "Gemini could not generate an action right now. Please try again."}), 502
-
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
 def list_produce():
@@ -591,39 +542,47 @@ def analyze_and_add_produce():
         data = request.json or {}
         user = current_user()
         crop_name = str(data.get("crop_name", "Produce")).strip()
+        crop_status = str(data.get("crop_status", "harvested")).strip().lower()
+        if crop_status not in {"harvested", "growing"}:
+            return jsonify({"success": False, "error": "Choose harvested or growing crop registration."}), 400
         variety = str(data.get("variety", "Desi / Local")).strip()
         field_name = str(data.get("field_name", "Field 1")).strip()
         raw_quantity = safe_float(data.get("quantity", 100), 100)
         unit = data.get("unit", "kg")
         quantity_kg = unit_to_kg(raw_quantity, unit)
-        harvest_date = data.get("harvest_date", datetime.today().strftime("%Y-%m-%d"))
+        harvest_date = data.get("harvest_date") or datetime.today().strftime("%Y-%m-%d")
+        planting_date = data.get("planting_date") or None
         storage_type = data.get("storage_type", "Ventilated Godown")
         image_base64 = data.get("image_base64")
         costs = data.get("production_costs", {})
         production_cost = sum(safe_float(v) for v in costs.values())
 
-        quality_grade = "A"
-        spoilage_risk = "Low"
+        quality_grade = "Growing" if crop_status == "growing" else "A"
+        spoilage_risk = "Not applicable" if crop_status == "growing" else "Low"
         shelf_life_days = 14
         defects = "Clean surface; uniform maturity."
-        recommendation = "Maintain regular ventilation and store in a cool, dry area."
+        recommendation = "Continue regular field monitoring and follow crop-specific care."
         processing_idea = "Standard wholesale grading and sorting."
+        suggested_harvest_date = harvest_date if crop_status == "harvested" else None
 
         if gemini_client or SECONDARY_AI_KEY:
             prompt = f"""
-Analyze post-harvest crop quality:
+Analyze this {crop_status} crop using the image if provided:
 - Crop: {crop_name}, Variety: {variety}, Field: {field_name}
-- Quantity: {quantity_kg} kg, Harvest Date: {harvest_date}, Storage: {storage_type}
+- Quantity: {quantity_kg} kg, Planting Date: {planting_date or 'not provided'}, Harvest Date: {harvest_date}
+- Storage: {storage_type}
 
 Respond strictly in valid JSON:
 {{
-    "quality_grade": "A" or "B" or "C",
+    "quality_grade": "Growing" if the crop is growing, otherwise "A" or "B" or "C",
     "defect_summary": "Concise physical/visual defect summary",
-    "spoilage_risk": "Low" or "Medium" or "High",
+    "spoilage_risk": "Not applicable" if the crop is growing, otherwise "Low" or "Medium" or "High",
     "shelf_life_days": integer_days_remaining,
     "recommendation": "Storage instructions",
-    "processing_idea": "Value-addition/processing idea"
+    "processing_idea": "Value-addition/processing idea",
+    "suggested_harvest_date": "YYYY-MM-DD"
 }}
+For a growing crop, suggest a harvest date based on the crop, variety, planting date, and visible maturity. For a harvested crop, use the supplied harvest date.
 """
             contents = [prompt]
             img = decode_image(image_base64)
@@ -631,16 +590,17 @@ Respond strictly in valid JSON:
                 contents.append(img)
             ai_text = None
             try:
-                response = gemini_client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        max_output_tokens=256,
-                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                if gemini_client:
+                    response = gemini_client.models.generate_content(
+                        model=GEMINI_MODEL,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            max_output_tokens=256,
+                            thinking_config=types.ThinkingConfig(thinking_level="low")
+                        )
                     )
-                )
-                ai_text = response.text
+                    ai_text = response.text
             except Exception as e:
                 print(f"Gemini quality error: {e}")
                 try:
@@ -656,6 +616,8 @@ Respond strictly in valid JSON:
                     shelf_life_days = int(ai_res.get("shelf_life_days", shelf_life_days))
                     recommendation = ai_res.get("recommendation", recommendation)
                     processing_idea = ai_res.get("processing_idea", processing_idea)
+                    if crop_status == "growing":
+                        suggested_harvest_date = ai_res.get("suggested_harvest_date") or suggested_harvest_date
             except (TypeError, ValueError, json.JSONDecodeError) as e:
                 print(f"AI quality response parsing error: {e}")
 
@@ -664,11 +626,14 @@ Respond strictly in valid JSON:
             "farmer_id": user["id"],
             "farmer_phone": user["email"],
             "crop_name": crop_name,
+            "crop_status": crop_status,
             "variety": variety,
             "field_name": field_name,
             "quantity_kg": quantity_kg,
             "input_unit": unit,
             "harvest_date": harvest_date,
+            "planting_date": planting_date,
+            "suggested_harvest_date": suggested_harvest_date,
             "storage_type": storage_type,
             "quality_grade": quality_grade,
             "spoilage_risk": spoilage_risk,

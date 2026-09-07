@@ -352,6 +352,7 @@ function renderStoredProduce() {
     }
 
     activeList.forEach(b => {
+        const isGrowing = b.crop_status === "growing";
         const riskClass = b.spoilage_risk === "High" ? "risk-high" : (b.spoilage_risk === "Medium" ? "risk-medium" : "risk-low");
         const card = document.createElement("div");
         card.className = `batch-card ${riskClass}`;
@@ -359,7 +360,7 @@ function renderStoredProduce() {
             <div>
                 <span class="crop-title">${b.crop_name}</span>
                 <small style="display: block; color: var(--text-muted);">${b.variety || ''} | ${b.field_name || ''}</small>
-                <span class="detail-lbl" style="margin-top: 4px;">${b.storage_type}</span>
+                <span class="detail-lbl" style="margin-top: 4px;">${isGrowing ? 'Current Growing Crop' : b.storage_type}</span>
             </div>
             <div>
                 <span class="detail-lbl">${currentLang === 'hi' ? 'भंडारित मात्रा' : 'Stored Volume'}</span>
@@ -369,7 +370,7 @@ function renderStoredProduce() {
             <div>
                 <span class="detail-lbl">${currentLang === 'hi' ? 'सड़न जोखिम' : 'Spoilage Risk'}</span>
                 <span class="detail-val text-${b.spoilage_risk === 'High' ? 'risk' : 'green'}">
-                    ${b.spoilage_risk} (${b.shelf_life_days} ${currentLang === 'hi' ? 'दिन शेष' : 'Days'})
+                    ${isGrowing ? `Suggested harvest: ${b.suggested_harvest_date || 'Pending AI analysis'}` : `${b.spoilage_risk} (${b.shelf_life_days} ${currentLang === 'hi' ? 'दिन शेष' : 'Days'})`}
                 </span>
                 <small style="display:block; font-size:11px; color:var(--text-muted);">${b.defect_summary || ''}</small>
             </div>
@@ -598,6 +599,15 @@ function triggerFileInput() {
     if (input) input.click();
 }
 
+function toggleCropRegistrationMode() {
+    const mode = document.querySelector('input[name="crop_status"]:checked')?.value || "harvested";
+    document.querySelectorAll(".growing-only").forEach(field => field.classList.toggle("hidden", mode !== "growing"));
+    const harvestDate = document.getElementById("harvest_date");
+    const harvestLabel = document.querySelector('label[for="harvest_date"]');
+    if (harvestDate) harvestDate.required = mode === "harvested";
+    if (harvestLabel) harvestLabel.textContent = mode === "growing" ? "Expected Harvest Date (optional)" : "Harvest Date";
+}
+
 async function handleProduceSubmit(e) {
     if (e && e.preventDefault) e.preventDefault();
     const btn = document.getElementById("btn-submit-produce");
@@ -617,6 +627,7 @@ async function handleProduceSubmit(e) {
     const quantityInput = document.getElementById("quantity");
     const weightUnitInput = document.getElementById("weight_unit");
     const harvestDateInput = document.getElementById("harvest_date");
+    const plantingDateInput = document.getElementById("planting_date");
     const storageTypeInput = document.getElementById("storage_type");
     if (!cropNameInput || !varietyInput || !fieldNameInput || !quantityInput || !weightUnitInput || !harvestDateInput || !storageTypeInput) {
         showToast(translations[currentLang].toastError, "error");
@@ -627,11 +638,13 @@ async function handleProduceSubmit(e) {
 
     const payload = {
         crop_name: cropNameInput.value,
+        crop_status: document.querySelector('input[name="crop_status"]:checked')?.value || "harvested",
         variety: varietyInput.value,
         field_name: fieldNameInput.value,
         quantity: quantityInput.value,
         unit: weightUnitInput.value,
         harvest_date: harvestDateInput.value,
+        planting_date: plantingDateInput?.value || null,
         storage_type: storageTypeInput.value,
         image_base64: selectedImageBase64,
         production_costs: prodCosts

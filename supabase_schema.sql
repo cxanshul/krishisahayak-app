@@ -4,11 +4,14 @@ CREATE TABLE IF NOT EXISTS produce_batches (
     farmer_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     farmer_phone TEXT NOT NULL DEFAULT '9876543210',
     crop_name TEXT NOT NULL,
+    crop_status TEXT NOT NULL DEFAULT 'harvested',
     variety TEXT DEFAULT 'Desi / Local',
     field_name TEXT DEFAULT 'Field 1 (North Acre)',
     quantity_kg NUMERIC NOT NULL,
     input_unit TEXT DEFAULT 'kg',
     harvest_date DATE NOT NULL,
+    planting_date DATE,
+    suggested_harvest_date DATE,
     storage_type TEXT DEFAULT 'Ventilated Godown',
     quality_grade TEXT DEFAULT 'A',
     spoilage_risk TEXT DEFAULT 'Low',
@@ -40,6 +43,9 @@ CREATE TABLE IF NOT EXISTS produce_batches (
 );
 
 ALTER TABLE produce_batches ADD COLUMN IF NOT EXISTS farmer_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE produce_batches ADD COLUMN IF NOT EXISTS crop_status TEXT NOT NULL DEFAULT 'harvested';
+ALTER TABLE produce_batches ADD COLUMN IF NOT EXISTS planting_date DATE;
+ALTER TABLE produce_batches ADD COLUMN IF NOT EXISTS suggested_harvest_date DATE;
 CREATE INDEX IF NOT EXISTS produce_batches_farmer_id_idx ON produce_batches (farmer_id);
 
 CREATE TABLE IF NOT EXISTS farmer_profiles (

@@ -245,6 +245,9 @@ body {
 .weather-metric strong { font-family: var(--font-serif); font-size: 20px; }
 .weather-forecast-section { margin-top: 24px; }
 .weather-forecast-section h4 { font-family: var(--font-serif); margin-bottom: 10px; }
+.crop-registration-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+.crop-mode-option { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--border-ledger); background: #F7F4E8; font-weight: 700; cursor: pointer; }
+.crop-mode-option input { accent-color: var(--leaf-green); }
 
 .form-header {
     display: flex;
