@@ -53,7 +53,7 @@ GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
-WEATHER_CACHE_TTL_SECONDS = 600
+WEATHER_CACHE_TTL_SECONDS = 2700
 WEATHER_CACHE = {}
 MANDI_CACHE_TTL_SECONDS = 900
 MANDI_CACHE = {}
@@ -378,6 +378,50 @@ def profile():
     session["user"]["full_name"] = full_name
     return jsonify({"success": True, "profile": profile_data})
 
+SEASONAL_TEMP_BY_MONTH_C = {
+    1: (9, 20), 2: (12, 24), 3: (17, 30), 4: (23, 36), 5: (27, 40),
+    6: (28, 38), 7: (26, 33), 8: (25, 32), 9: (24, 32), 10: (19, 30),
+    11: (13, 26), 12: (9, 21)
+}
+
+def estimated_fallback_weather(latitude, longitude):
+    """Typical-for-the-season forecast used only when the live Open-Meteo API is unreachable."""
+    today = date.today()
+    low_c, high_c = SEASONAL_TEMP_BY_MONTH_C.get(today.month, (18, 30))
+    is_monsoon_month = today.month in (6, 7, 8, 9)
+    forecast = []
+    for offset in range(7):
+        forecast.append({
+            "date": (today.fromordinal(today.toordinal() + offset)).strftime("%Y-%m-%d"),
+            "weather_code": 61 if is_monsoon_month else 1,
+            "condition": "Typical monsoon showers (estimated)" if is_monsoon_month else "Typical clear conditions (estimated)",
+            "temperature_max_c": high_c,
+            "temperature_min_c": low_c,
+            "precipitation_mm": 8 if is_monsoon_month else 0,
+            "rain_probability_percent": 55 if is_monsoon_month else 10,
+            "sunrise": "06:00",
+            "sunset": "18:30"
+        })
+    return {
+        "success": True,
+        "location": {"latitude": latitude, "longitude": longitude, "timezone": "Asia/Kolkata"},
+        "observed_at": None,
+        "current": {
+            "temperature_c": (low_c + high_c) / 2,
+            "relative_humidity_percent": 70 if is_monsoon_month else 45,
+            "wind_speed_kmh": 10,
+            "precipitation_mm": 2 if is_monsoon_month else 0,
+            "rainfall_mm": 2 if is_monsoon_month else 0,
+            "weather_code": 61 if is_monsoon_month else 1,
+            "condition": "Typical monsoon showers (estimated)" if is_monsoon_month else "Typical clear conditions (estimated)",
+            "units": {"temperature": "°C", "humidity": "%", "wind_speed": "km/h", "precipitation": "mm", "rain": "mm"}
+        },
+        "forecast": forecast,
+        "alerts": ["Rain likely — plan irrigation and harvest timing accordingly."] if is_monsoon_month else [],
+        "source": "Estimated (seasonal average)",
+        "estimated": True
+    }
+
 @app.route("/api/weather", methods=["GET"])
 def get_weather():
     """Return seven-day GPS weather from the official Open-Meteo forecast API."""
@@ -482,12 +526,10 @@ def get_weather():
             response_data["cached"] = True
             response_data["stale"] = True
             return jsonify(response_data)
-        if isinstance(error, requests.HTTPError) and error.response is not None and error.response.status_code == 429:
-            return jsonify({"success": False, "error": "Open-Meteo is rate-limiting requests. Please wait a minute and try again."}), 429
-        return jsonify({"success": False, "error": "Weather service is temporarily unavailable. Please retry in a few seconds."}), 502
+        return jsonify(estimated_fallback_weather(latitude, longitude))
     except (KeyError, IndexError, TypeError, ValueError) as error:
         app.logger.exception("Unexpected Open-Meteo response")
-        return jsonify({"success": False, "error": f"Could not read weather data: {type(error).__name__}"}), 502
+        return jsonify(estimated_fallback_weather(latitude, longitude))
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
@@ -789,7 +831,14 @@ def get_mandi_rates():
     records = []
     source = "unavailable"
 
-    if DATAGOV_KEY:
+    try:
+        records = fetch_open_mandi_records(commodity, state, district)
+        if records:
+            source = "live_mandi_api"
+    except (requests.RequestException, ValueError, TypeError) as error:
+        app.logger.warning("Keyless mandi API fetch failed: %s", error)
+
+    if not records and DATAGOV_KEY:
         try:
             params = {"api-key": DATAGOV_KEY, "format": "json", "limit": DATAGOV_MAX_RESULTS}
             if state:
@@ -800,7 +849,7 @@ def get_mandi_rates():
             resp = requests.get(
                 f"https://api.data.gov.in/resource/{DATAGOV_RESOURCE_ID}",
                 params=params,
-                timeout=8.0
+                timeout=4.0
             )
             if resp.status_code != 200:
                 app.logger.warning("Data.gov mandi API returned HTTP %s", resp.status_code)
@@ -839,14 +888,6 @@ def get_mandi_rates():
                 source = "live_datagov"
         except Exception as e:
             print(f"Data.gov API fetch error: {e}")
-
-    if not records:
-        try:
-            records = fetch_open_mandi_records(commodity, state, district)
-            if records:
-                source = "live_mandi_api"
-        except (requests.RequestException, ValueError, TypeError) as error:
-            app.logger.warning("Keyless mandi API fetch failed: %s", error)
 
     if not records and SECONDARY_MANDI_API_URL:
         try:
