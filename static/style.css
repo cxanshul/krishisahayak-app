@@ -235,6 +235,9 @@ body {
 .weather-alert { border-left: 4px solid var(--turmeric); background: #FFF7D9; color: var(--text-loam); padding: 9px 11px; font-size: 12px; }
 .weather-alert.high { border-left-color: var(--risk-red); background: #FBE9E4; }
 .weather-alert.clear { border-left-color: var(--leaf-green); background: #E8F2E3; }
+.weather-action-box { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin: 16px 0; padding: 14px; border: 1px solid var(--border-ledger); background: #F7F4E8; }
+.weather-action-box .weather-status { margin: 4px 0 0; }
+.weather-action-box button:disabled { opacity: 0.6; cursor: wait; }
 .weather-metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .weather-metric { background: #EEF3E7; border: 1px solid var(--border-ledger); padding: 14px; min-height: 98px; display: grid; grid-template-columns: auto 1fr; column-gap: 9px; align-items: center; }
 .weather-metric-icon { font-size: 20px; grid-row: span 2; }

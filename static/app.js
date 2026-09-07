@@ -971,6 +971,39 @@ async function fetchWeather(latitude, longitude) {
     }
 }
 
+async function generateWeatherAction() {
+    const result = document.getElementById("weather-action-result");
+    const button = document.getElementById("weather-action-button");
+    if (!result || !button) return;
+    if (!weatherCache?.data) {
+        result.textContent = "Load your GPS weather first, then analyze.";
+        return;
+    }
+    const crop = document.getElementById("calc_crop")?.value || "the crop";
+    button.disabled = true;
+    result.textContent = "Gemini is analyzing today and tomorrow...";
+    try {
+        const response = await fetch("/api/weather/action-suggestion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                latitude: weatherCache.latitude,
+                longitude: weatherCache.longitude,
+                current: weatherCache.data.current,
+                forecast: weatherCache.data.forecast.slice(0, 2),
+                crop
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Could not generate action.");
+        result.textContent = data.suggestion;
+    } catch (error) {
+        result.textContent = error.message;
+    } finally {
+        button.disabled = false;
+    }
+}
+
 function requestWeatherFromGps() {
     const status = document.getElementById("weather-status");
     if (!navigator.geolocation) {

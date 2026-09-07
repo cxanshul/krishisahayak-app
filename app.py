@@ -502,6 +502,55 @@ def get_weather():
         app.logger.exception("Unexpected AccuWeather response")
         return jsonify({"success": False, "error": "Could not read AccuWeather data. Please try again."}), 502
 
+@app.route("/api/weather/action-suggestion", methods=["POST"])
+def weather_action_suggestion():
+    data = request.json or {}
+    latitude = safe_float(data.get("latitude"), None)
+    longitude = safe_float(data.get("longitude"), None)
+    current = data.get("current") or {}
+    forecast = data.get("forecast") or []
+    crop = str(data.get("crop", "the crop")).strip() or "the crop"
+    if latitude is None or longitude is None or not (
+        INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"]
+        and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]
+    ):
+        return jsonify({"success": False, "error": "A valid GPS location is required."}), 400
+    if not current or not forecast:
+        return jsonify({"success": False, "error": "Load current weather before generating an action."}), 400
+    if not gemini_client:
+        return jsonify({"success": False, "error": "Gemini AI is not configured on the server."}), 503
+
+    weather_context = {
+        "location": {"latitude": latitude, "longitude": longitude},
+        "current": current,
+        "today": forecast[0],
+        "tomorrow": forecast[1] if len(forecast) > 1 else forecast[0]
+    }
+    prompt = f"""
+You are an agricultural weather advisor. Give one practical action to protect {crop} from weather imbalance.
+Use only the supplied GPS weather data for today and tomorrow. Do not invent conditions, dates, or measurements.
+Return exactly one short sentence, maximum 25 words, starting with an action verb. Do not use bullets, headings, or disclaimers.
+
+GPS weather data:
+{json.dumps(weather_context, ensure_ascii=False)}
+"""
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                max_output_tokens=80,
+                thinking_config=types.ThinkingConfig(thinking_level="low")
+            )
+        )
+        suggestion = (response.text or "").strip().replace("\n", " ")
+        if not suggestion:
+            return jsonify({"success": False, "error": "Gemini returned no action suggestion."}), 502
+        return jsonify({"success": True, "suggestion": suggestion, "source": "Gemini AI"})
+    except Exception as error:
+        app.logger.warning("Weather action suggestion failed: %s", error)
+        return jsonify({"success": False, "error": "Gemini could not generate an action right now. Please try again."}), 502
+
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
 def list_produce():
