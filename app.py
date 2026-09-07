@@ -50,7 +50,8 @@ SUPABASE_URL = env_value("SUPABASE_URL")
 SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 
-OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+ACCUWEATHER_API_KEY = env_value("ACCUWEATHER_API_KEY")
+ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
 WEATHER_CACHE_TTL_SECONDS = 2700
@@ -378,53 +379,27 @@ def profile():
     session["user"]["full_name"] = full_name
     return jsonify({"success": True, "profile": profile_data})
 
-SEASONAL_TEMP_BY_MONTH_C = {
-    1: (9, 20), 2: (12, 24), 3: (17, 30), 4: (23, 36), 5: (27, 40),
-    6: (28, 38), 7: (26, 33), 8: (25, 32), 9: (24, 32), 10: (19, 30),
-    11: (13, 26), 12: (9, 21)
-}
+def accuweather_time(value):
+    if not value:
+        return None
+    return str(value)[11:16]
 
-def estimated_fallback_weather(latitude, longitude):
-    """Typical-for-the-season forecast used only when the live Open-Meteo API is unreachable."""
-    today = date.today()
-    low_c, high_c = SEASONAL_TEMP_BY_MONTH_C.get(today.month, (18, 30))
-    is_monsoon_month = today.month in (6, 7, 8, 9)
-    forecast = []
-    for offset in range(7):
-        forecast.append({
-            "date": (today.fromordinal(today.toordinal() + offset)).strftime("%Y-%m-%d"),
-            "weather_code": 61 if is_monsoon_month else 1,
-            "condition": "Typical monsoon showers (estimated)" if is_monsoon_month else "Typical clear conditions (estimated)",
-            "temperature_max_c": high_c,
-            "temperature_min_c": low_c,
-            "precipitation_mm": 8 if is_monsoon_month else 0,
-            "rain_probability_percent": 55 if is_monsoon_month else 10,
-            "sunrise": "06:00",
-            "sunset": "18:30"
-        })
-    return {
-        "success": True,
-        "location": {"latitude": latitude, "longitude": longitude, "timezone": "Asia/Kolkata"},
-        "observed_at": None,
-        "current": {
-            "temperature_c": (low_c + high_c) / 2,
-            "relative_humidity_percent": 70 if is_monsoon_month else 45,
-            "wind_speed_kmh": 10,
-            "precipitation_mm": 2 if is_monsoon_month else 0,
-            "rainfall_mm": 2 if is_monsoon_month else 0,
-            "weather_code": 61 if is_monsoon_month else 1,
-            "condition": "Typical monsoon showers (estimated)" if is_monsoon_month else "Typical clear conditions (estimated)",
-            "units": {"temperature": "°C", "humidity": "%", "wind_speed": "km/h", "precipitation": "mm", "rain": "mm"}
-        },
-        "forecast": forecast,
-        "alerts": ["Rain likely — plan irrigation and harvest timing accordingly."] if is_monsoon_month else [],
-        "source": "Estimated (seasonal average)",
-        "estimated": True
-    }
+def accuweather_rainfall(forecast_day):
+    rain = forecast_day.get("Day", {}).get("Rain", {})
+    return safe_float(rain.get("Value"), 0.0)
+
+def accuweather_alerts(current, forecast):
+    alerts = []
+    if current.get("HasPrecipitation") or any(day.get("Day", {}).get("HasPrecipitation") for day in forecast[:1]):
+        alerts.append({"level": "medium", "message": "Rain is possible. Check field drainage before irrigation."})
+    wind = safe_float(current.get("Wind", {}).get("Speed", {}).get("Metric", {}).get("Value"))
+    if wind >= 40:
+        alerts.append({"level": "high", "message": "High wind risk. Secure seedlings, shade nets, and loose farm equipment."})
+    return alerts
 
 @app.route("/api/weather", methods=["GET"])
 def get_weather():
-    """Return seven-day GPS weather from the official Open-Meteo forecast API."""
+    """Return GPS weather from the official AccuWeather API."""
     latitude = safe_float(request.args.get("latitude"), None)
     longitude = safe_float(request.args.get("longitude"), None)
     if latitude is None or longitude is None:
@@ -442,51 +417,48 @@ def get_weather():
         response_data["cached"] = True
         return jsonify(response_data)
 
-    base_params = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "timezone": "auto",
-        "forecast_days": 7,
-        "current": "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m",
-        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset"
-    }
     try:
-        response = None
-        last_error = None
-        for attempt in range(3):
-            try:
-                response = requests.get(OPEN_METEO_FORECAST_URL, params=base_params, timeout=12.0)
-                if response.status_code == 429 and attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                response.raise_for_status()
-                break
-            except requests.RequestException as retry_error:
-                last_error = retry_error
-                if attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                raise
-        if response is None:
-            raise last_error or requests.RequestException("No response from Open-Meteo")
-        payload = response.json()
-        current = payload.get("current", {})
-        current_units = payload.get("current_units", {})
-        daily = payload.get("daily", {})
-        daily_units = payload.get("daily_units", {})
+        if not ACCUWEATHER_API_KEY:
+            return jsonify({"success": False, "error": "AccuWeather API is not configured."}), 503
+        auth = {"apikey": ACCUWEATHER_API_KEY, "language": "en-us"}
+        location_response = requests.get(
+            f"{ACCUWEATHER_BASE_URL}/locations/v1/cities/geoposition/search",
+            params={**auth, "q": f"{latitude},{longitude}", "details": "false"},
+            timeout=12.0
+        )
+        location_response.raise_for_status()
+        location = location_response.json()
+        location_key = location.get("Key")
+        if not location_key:
+            raise ValueError("AccuWeather did not return a location key.")
+
+        current_response = requests.get(
+            f"{ACCUWEATHER_BASE_URL}/currentconditions/v1/{location_key}",
+            params={**auth, "details": "true"},
+            timeout=12.0
+        )
+        forecast_response = requests.get(
+            f"{ACCUWEATHER_BASE_URL}/forecasts/v1/daily/5day/{location_key}",
+            params={**auth, "details": "true", "metric": "true"},
+            timeout=12.0
+        )
+        current_response.raise_for_status()
+        forecast_response.raise_for_status()
+        current = (current_response.json() or [{}])[0]
+        forecast_payload = forecast_response.json()
+        forecast_days = forecast_payload.get("DailyForecasts", [])
         forecast = []
-        for index, forecast_date in enumerate(daily.get("time", [])):
-            code = (daily.get("weather_code") or [])[index]
+        for forecast_day in forecast_days:
+            day = forecast_day.get("Day", {})
             forecast.append({
-                "date": forecast_date,
-                "weather_code": code,
-                "condition": weather_description(code),
-                "temperature_max_c": (daily.get("temperature_2m_max") or [])[index],
-                "temperature_min_c": (daily.get("temperature_2m_min") or [])[index],
-                "precipitation_mm": (daily.get("precipitation_sum") or [])[index],
-                "rain_probability_percent": (daily.get("precipitation_probability_max") or [])[index],
-                "sunrise": (daily.get("sunrise") or [])[index],
-                "sunset": (daily.get("sunset") or [])[index]
+                "date": str(forecast_day.get("Date", ""))[:10],
+                "condition": day.get("IconPhrase", "Weather data available"),
+                "temperature_max_c": forecast_day.get("Temperature", {}).get("Maximum", {}).get("Value"),
+                "temperature_min_c": forecast_day.get("Temperature", {}).get("Minimum", {}).get("Value"),
+                "precipitation_mm": accuweather_rainfall(forecast_day),
+                "rain_probability_percent": day.get("RainProbability", 0),
+                "sunrise": accuweather_time(day.get("Sun" , {}).get("Rise")),
+                "sunset": accuweather_time(day.get("Sun" , {}).get("Set"))
             })
 
         response_data = {
@@ -494,42 +466,41 @@ def get_weather():
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
-                "timezone": payload.get("timezone", "auto")
+                "timezone": location.get("TimeZone", {}).get("Name", "")
             },
-            "observed_at": current.get("time"),
+            "observed_at": current.get("LocalObservationDateTime"),
             "current": {
-                "temperature_c": current.get("temperature_2m"),
-                "relative_humidity_percent": current.get("relative_humidity_2m"),
-                "wind_speed_kmh": current.get("wind_speed_10m"),
-                "precipitation_mm": current.get("precipitation"),
-                "rainfall_mm": current.get("rain"),
-                "weather_code": current.get("weather_code"),
-                "condition": weather_description(current.get("weather_code")),
+                "temperature_c": current.get("Temperature", {}).get("Metric", {}).get("Value"),
+                "relative_humidity_percent": current.get("RelativeHumidity"),
+                "wind_speed_kmh": current.get("Wind", {}).get("Speed", {}).get("Metric", {}).get("Value"),
+                "precipitation_mm": current.get("PrecipitationSummary", {}).get("Precipitation", {}).get("Metric", {}).get("Value", 0),
+                "rainfall_mm": current.get("PrecipitationSummary", {}).get("Precipitation", {}).get("Metric", {}).get("Value", 0),
+                "condition": current.get("WeatherText", "Weather data available"),
                 "units": {
-                    "temperature": current_units.get("temperature_2m", "°C"),
-                    "humidity": current_units.get("relative_humidity_2m", "%"),
-                    "wind_speed": current_units.get("wind_speed_10m", "km/h"),
-                    "precipitation": current_units.get("precipitation", "mm"),
-                    "rain": current_units.get("rain", "mm")
+                    "temperature": "°C",
+                    "humidity": "%",
+                    "wind_speed": "km/h",
+                    "precipitation": "mm",
+                    "rain": "mm"
                 }
             },
             "forecast": forecast,
-            "alerts": weather_alerts(current, daily),
-            "source": "Open-Meteo"
+            "alerts": accuweather_alerts(current, forecast_days),
+            "source": "AccuWeather"
         }
         WEATHER_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
         return jsonify(response_data)
     except requests.RequestException as error:
-        app.logger.warning("Open-Meteo request failed: %s", error)
+        app.logger.warning("AccuWeather request failed: %s", error)
         if cached:
             response_data = dict(cached["data"])
             response_data["cached"] = True
             response_data["stale"] = True
             return jsonify(response_data)
-        return jsonify(estimated_fallback_weather(latitude, longitude))
+        return jsonify({"success": False, "error": "AccuWeather is temporarily unavailable. Please try again."}), 502
     except (KeyError, IndexError, TypeError, ValueError) as error:
-        app.logger.exception("Unexpected Open-Meteo response")
-        return jsonify(estimated_fallback_weather(latitude, longitude))
+        app.logger.exception("Unexpected AccuWeather response")
+        return jsonify({"success": False, "error": "Could not read AccuWeather data. Please try again."}), 502
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
