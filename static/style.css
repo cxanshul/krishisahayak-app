@@ -1113,3 +1113,343 @@ body {
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+/* =========================================================================
+   DEPTH PASS — paper, terrain & foil
+   A second layer of polish on top of the existing ledger identity.
+   Structure/markup/behavior untouched — visual only.
+   ========================================================================= */
+
+:root {
+    --shadow-contact: 0 1px 2px rgba(43, 36, 24, 0.10), 0 2px 5px rgba(43, 36, 24, 0.08);
+    --shadow-ambient: 0 10px 24px rgba(43, 36, 24, 0.10), 0 24px 48px rgba(43, 36, 24, 0.09);
+    --shadow-ambient-lg: 0 20px 46px rgba(43, 36, 24, 0.16), 0 6px 16px rgba(43, 36, 24, 0.10);
+    --gold-foil: linear-gradient(120deg, #a67c00 0%, #f0c53d 28%, #ffe9a8 45%, #d9a404 62%, #a67c00 100%);
+    --ink: #242A20;
+}
+
+/* Fine paper grain across the whole app — barely-there, adds material honesty */
+html { position: relative; }
+html::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* ---- Sidebar: bound like a field ledger ---- */
+.sidebar {
+    background-image:
+        linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08) 40%, rgba(0,0,0,0.14)),
+        radial-gradient(circle at 12% 0%, rgba(217,164,4,0.10), transparent 45%);
+    border-right: 1px solid rgba(0,0,0,0.25);
+}
+
+.sidebar::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; right: 0;
+    width: 10px;
+    background-image: repeating-linear-gradient(
+        180deg,
+        rgba(217,164,4,0.55) 0px, rgba(217,164,4,0.55) 2px,
+        transparent 2px, transparent 22px
+    );
+    box-shadow: inset -1px 0 0 rgba(0,0,0,0.3);
+    opacity: 0.55;
+}
+
+.brand { position: relative; }
+.brand .logo {
+    position: relative;
+    display: inline-block;
+    background: var(--gold-foil);
+    background-size: 220% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+    filter: drop-shadow(0 1px 0 rgba(0,0,0,0.35));
+    animation: fade-up 0.7s 0.1s ease both, foil-sheen 7s 1.2s ease-in-out infinite;
+}
+
+@keyframes foil-sheen {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+/* Embossed wax-seal badge, purely decorative, sits beside the wordmark */
+.brand::after {
+    content: "";
+    position: absolute;
+    top: -6px;
+    right: 6px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 35% 30%, rgba(255,255,255,0.5), transparent 40%),
+        conic-gradient(from 210deg, var(--turmeric-dark), var(--turmeric), #f0c53d, var(--turmeric-dark));
+    box-shadow: var(--shadow-contact), inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -2px 3px rgba(0,0,0,0.35);
+    transform: perspective(240px) rotateX(8deg);
+    animation: fade-up 0.8s 0.25s ease both, seal-spin 16s linear infinite;
+}
+
+@keyframes seal-spin {
+    from { transform: perspective(240px) rotateX(8deg) rotateZ(0deg); }
+    to   { transform: perspective(240px) rotateX(8deg) rotateZ(360deg); }
+}
+
+.nav-item.active {
+    box-shadow: var(--shadow-contact), inset 2px 0 0 var(--turmeric);
+}
+
+/* ---- Header field photo: real dimension, not just a hover-scale ---- */
+.farm-visual {
+    transform: perspective(700px) rotateY(-4deg) rotateX(1deg);
+    box-shadow: var(--shadow-ambient), 8px 10px 0 -6px rgba(217,164,4,0.35);
+    transition: transform 0.4s ease, box-shadow 0.4s ease;
+}
+.farm-visual:hover {
+    transform: perspective(700px) rotateY(0deg) rotateX(0deg) translateY(-2px);
+    box-shadow: var(--shadow-ambient-lg), 10px 12px 0 -6px rgba(217,164,4,0.4);
+}
+
+/* ---- Stat strip: engraved ledger totals ---- */
+.ledger-stat-strip {
+    position: relative;
+    box-shadow: var(--shadow-ambient);
+    border-top: 3px solid var(--turmeric);
+}
+.stat-cell { position: relative; transition: transform 0.25s ease, background-color 0.25s ease; }
+.stat-cell:hover { background-color: #dde6d1; transform: translateY(-2px); }
+.stat-value {
+    text-shadow: 0 1px 0 rgba(255,255,255,0.6), 0 -1px 0 rgba(43,36,24,0.06);
+    letter-spacing: 0.2px;
+}
+
+/* ---- Cards get real material presence ---- */
+.form-container,
+.batch-card,
+.history-card,
+.calc-results-card,
+.weather-metric,
+.res-box,
+.profile-card {
+    box-shadow: var(--shadow-contact), var(--shadow-ambient);
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.batch-card:hover,
+.history-card:hover {
+    box-shadow: var(--shadow-contact), var(--shadow-ambient-lg);
+    transform: translateY(-3px);
+}
+.calc-results-card {
+    box-shadow: var(--shadow-contact), var(--shadow-ambient-lg);
+    background-image: linear-gradient(180deg, #ffffff, #fbfcf9);
+}
+.res-box.highlight-profit {
+    box-shadow: var(--shadow-contact), 0 8px 20px rgba(63,102,64,0.16);
+}
+
+/* ---- Buttons: tactile, embossed, pressable ---- */
+.btn-primary-action {
+    background-image: linear-gradient(180deg, var(--leaf-light), var(--leaf-green));
+    box-shadow: var(--shadow-contact), inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 14px rgba(63,102,64,0.28);
+    transform: translateY(0);
+}
+.btn-primary-action:hover { background-image: linear-gradient(180deg, #5a8f5b, var(--leaf-light)); }
+.btn-primary-action:active { transform: translateY(1px); box-shadow: var(--shadow-contact); }
+
+.btn-quick-demo, .btn-secondary, .auth-submit {
+    box-shadow: var(--shadow-contact);
+}
+.btn-quick-demo:active, .btn-secondary:active { transform: translateY(0px) scale(0.98); }
+
+.auth-submit {
+    background-image: linear-gradient(180deg, var(--leaf-light), var(--leaf-green));
+    box-shadow: var(--shadow-contact), 0 10px 22px rgba(63,102,64,0.3);
+    letter-spacing: 0.3px;
+}
+.auth-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-contact), 0 14px 26px rgba(63,102,64,0.36); }
+.auth-submit:active:not(:disabled) { transform: translateY(0); }
+
+/* ---- Table: an actual ledger page ---- */
+.mandi-table {
+    box-shadow: var(--shadow-contact), var(--shadow-ambient);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.mandi-table th {
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    box-shadow: inset 0 -2px 0 rgba(217,164,4,0.4);
+}
+.mandi-table tbody tr { transition: background-color 0.15s ease; position: relative; }
+.mandi-table tbody tr:nth-child(even) { background: rgba(228, 236, 219, 0.35); }
+.mandi-table tbody tr:hover { background: #eef4e6; }
+
+/* ---- Floating assistant: a little dimension + a living presence ---- */
+.assistant-bubble {
+    box-shadow: var(--shadow-ambient-lg);
+    animation: bubble-bob 3.6s ease-in-out infinite;
+}
+.assistant-bubble:hover { animation-play-state: paused; transform: translateY(-2px) scale(1.03); }
+@keyframes bubble-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+}
+.assistant-panel { box-shadow: var(--shadow-ambient-lg); }
+.assistant-panel.open { animation: panel-rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes panel-rise { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* ---- Custom scrollbar, in-palette ---- */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: var(--bg-field); }
+::-webkit-scrollbar-thumb { background: #c3cdb4; border-radius: 20px; border: 3px solid var(--bg-field); }
+::-webkit-scrollbar-thumb:hover { background: var(--leaf-green); }
+
+/* =========================================================================
+   AUTH PAGE — the hero moment: a terrain scene at dusk
+   ========================================================================= */
+
+.auth-page {
+    background: radial-gradient(circle at 80% 12%, rgba(217,164,4,0.16), transparent 45%), linear-gradient(160deg, #e8efdf 0%, #f8f8f2 50%, #f1dfaa 100%);
+}
+
+.auth-shell {
+    box-shadow: var(--shadow-ambient-lg);
+    border-radius: 6px;
+    overflow: hidden;
+    perspective: 1600px;
+}
+
+.auth-intro {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, #1b2118 0%, #242a20 55%, #2c3526 100%);
+}
+
+/* Layered hills — pure CSS terrain, three parallax depths */
+.auth-scene { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.scene-sun {
+    position: absolute;
+    right: 14%;
+    top: 12%;
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ffe9a8 0%, var(--turmeric) 55%, transparent 72%);
+    box-shadow: 0 0 60px 18px rgba(217,164,4,0.28);
+    animation: sun-glow 6s ease-in-out infinite;
+}
+@keyframes sun-glow { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+.scene-hill {
+    position: absolute;
+    left: -10%;
+    width: 120%;
+    height: 46%;
+    bottom: 0;
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+.scene-hill-1 { background: #1f2a1b; bottom: -6%; opacity: 0.9; transform: scaleX(1.15); }
+.scene-hill-2 { background: #283a22; bottom: -2%; height: 38%; opacity: 0.92; transform: scaleX(1.3) translateX(4%); }
+.scene-hill-3 { background: linear-gradient(180deg, #3a5232, #2f4529); bottom: 0; height: 26%; }
+
+.scene-leaf {
+    position: absolute;
+    bottom: -10%;
+    width: 9px;
+    height: 14px;
+    background: var(--turmeric);
+    opacity: 0.55;
+    border-radius: 0 70% 0 70%;
+    animation: leaf-drift 13s linear infinite;
+}
+.scene-leaf:nth-child(4) { left: 12%; background: #cbd6c6; animation-duration: 15s; animation-delay: 0s; }
+.scene-leaf:nth-child(5) { left: 34%; background: var(--turmeric); animation-duration: 11s; animation-delay: 2.5s; }
+.scene-leaf:nth-child(6) { left: 58%; background: #cbd6c6; animation-duration: 17s; animation-delay: 5s; }
+.scene-leaf:nth-child(7) { left: 76%; background: var(--turmeric); animation-duration: 12.5s; animation-delay: 1.2s; }
+.scene-leaf:nth-child(8) { left: 90%; background: #cbd6c6; animation-duration: 14s; animation-delay: 3.8s; }
+
+@keyframes leaf-drift {
+    0%   { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+    8%   { opacity: 0.6; }
+    100% { transform: translateY(-380px) translateX(26px) rotate(230deg); opacity: 0; }
+}
+
+.auth-kicker, .auth-intro h1, .auth-intro > p:last-child { position: relative; z-index: 1; }
+.auth-intro h1 {
+    text-shadow: 0 2px 18px rgba(0,0,0,0.35);
+}
+.auth-kicker {
+    padding: 3px 9px;
+    border: 1px solid rgba(217,164,4,0.5);
+    border-radius: 20px;
+    display: inline-block;
+}
+
+/* Card: a document lifted off the page, with a foil corner seal */
+.auth-card {
+    position: relative;
+    background: #fffefb;
+    transform: rotateY(-1.4deg);
+    transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.auth-shell:hover .auth-card { transform: rotateY(0deg); }
+
+.auth-card::before {
+    content: "";
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: var(--gold-foil);
+    background-size: 220% auto;
+    box-shadow: var(--shadow-contact), inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -2px 4px rgba(0,0,0,0.3);
+    animation: foil-sheen 6s ease-in-out infinite;
+}
+.auth-card::after {
+    content: "";
+    position: absolute;
+    top: 33px;
+    right: 33px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(36,42,32,0.55);
+}
+
+.auth-tab { transition: color 0.2s ease, transform 0.2s ease; }
+.auth-tab:hover { color: var(--leaf-green); }
+.auth-tab.active { transform: translateY(-1px); }
+
+#auth-form input {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    border-radius: 3px;
+}
+#auth-form input:focus {
+    outline: none;
+    border-color: var(--leaf-green);
+    box-shadow: 0 0 0 3px rgba(63,102,64,0.14);
+}
+
+@media (max-width: 680px) {
+    .auth-shell { perspective: none; }
+    .auth-card { transform: none; }
+    .scene-sun { width: 60px; height: 60px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html::before { display: none; }
+    .brand .logo, .brand::after, .assistant-bubble, .scene-sun, .scene-leaf, .auth-card::before {
+        animation: none !important;
+    }
+    .auth-card { transform: none !important; }
+}
