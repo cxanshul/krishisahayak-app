@@ -267,9 +267,12 @@ async function fetchMandiRates() {
             if (data.source === "live_datagov") {
                 alertBox.className = "mandi-alert live";
                 alertBox.innerText = "🟢 Displaying live Data.gov.in APMC mandi records.";
+            } else if (data.source === "secondary_gov") {
+                alertBox.className = "mandi-alert live";
+                alertBox.innerText = "🟢 Displaying live secondary government mandi records.";
             } else {
                 alertBox.className = "mandi-alert fallback";
-                alertBox.innerText = "🟡 Data.gov.in is unavailable right now. Displaying fallback benchmark rates, not live prices.";
+                alertBox.innerText = "🟡 Live government mandi data is unavailable right now. No stale benchmark rates are being shown.";
             }
             alertBox.classList.remove("hidden");
         }

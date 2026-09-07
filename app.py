@@ -39,6 +39,7 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 GEMINI_KEY = env_value("GEMINI_API_KEY")
 DATAGOV_KEY = env_value("DATAGOV_API_KEY")
 DATAGOV_RESOURCE_ID = env_value("DATAGOV_RESOURCE_ID", "9ef84268-d588-465a-a308-a864a43d0070")
+DATAGOV_MAX_RESULTS = max(1, min(int(env_value("DATAGOV_MAX_RESULTS", "1000")), 1000))
 SECONDARY_MANDI_API_URL = env_value("SECONDARY_MANDI_API_URL")
 SECONDARY_AI_KEY = env_value("SECONDARY_AI_API_KEY")
 SECONDARY_AI_URL = env_value("SECONDARY_AI_API_URL", "https://api.openai.com/v1/chat/completions")
@@ -798,11 +799,11 @@ def get_mandi_rates():
         return jsonify(response_data)
 
     records = []
-    source = "fallback_cache"
+    source = "unavailable"
 
     if DATAGOV_KEY:
         try:
-            params = {"api-key": DATAGOV_KEY, "format": "json", "limit": 100}
+            params = {"api-key": DATAGOV_KEY, "format": "json", "limit": DATAGOV_MAX_RESULTS}
             if state:
                 params["filters[state]"] = state
             if commodity:
@@ -853,7 +854,7 @@ def get_mandi_rates():
 
     if not records and SECONDARY_MANDI_API_URL:
         try:
-            params = {"format": "json", "limit": 100}
+            params = {"format": "json", "limit": DATAGOV_MAX_RESULTS}
             if commodity:
                 params["commodity"] = commodity
             if state:
@@ -886,44 +887,19 @@ def get_mandi_rates():
         except (requests.RequestException, ValueError, TypeError) as e:
             print(f"Secondary mandi API fetch error: {e}")
 
-    # Fallback Data Execution
-    if not records:
-        filtered = MANDI_FALLBACK_DATABASE
-        if commodity:
-            filtered = [f for f in filtered if commodity.lower() in f["commodity"].lower()]
-        if state:
-            filtered = [f for f in filtered if state.lower() in f["state"].lower()]
-        if district:
-            filtered = [f for f in filtered if district.lower() in f["district"].lower()]
-
-        for r in filtered:
-            arr_date = r.get("arrival_date", "2026-08-30")
-            records.append({
-                "state": r["state"],
-                "district": r["district"],
-                "market": r["market"],
-                "commodity": r["commodity"],
-                "variety": r["variety"],
-                "min_price": r["min_price"],
-                "max_price": r["max_price"],
-                "modal_price": r["modal_price"],
-                "arrival_date": arr_date,
-                "is_today": (arr_date == today_str),
-                "price_type": "Latest Verified Benchmark Rate"
-            })
-
     response_data = {
-        "success": True,
+        "success": bool(records),
         "source": source,
         "source_label": (
             "Live Data.gov.in APMC records" if source == "live_datagov"
             else "Secondary government mandi API records" if source == "secondary_gov"
-            else "Fallback benchmark records; government APIs unavailable"
+            else "Live government mandi data is currently unavailable"
         ),
         "total_records": len(records),
         "records": records
     }
-    MANDI_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
+    if records:
+        MANDI_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
     return jsonify(response_data)
 
 # ============================================================
