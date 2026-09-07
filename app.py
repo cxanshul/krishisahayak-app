@@ -51,7 +51,6 @@ SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-OPEN_METEO_SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
 WEATHER_CACHE_TTL_SECONDS = 600
@@ -381,7 +380,7 @@ def profile():
 
 @app.route("/api/weather", methods=["GET"])
 def get_weather():
-    """Return India-local weather and agronomic indicators from Open-Meteo."""
+    """Return seven-day GPS weather from the official Open-Meteo forecast API."""
     latitude = safe_float(request.args.get("latitude"), None)
     longitude = safe_float(request.args.get("longitude"), None)
     if latitude is None or longitude is None:
@@ -402,10 +401,10 @@ def get_weather():
     base_params = {
         "latitude": latitude,
         "longitude": longitude,
-        "timezone": "Asia/Kolkata",
-        "forecast_days": 3,
-        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,rain,shortwave_radiation,direct_normal_irradiance",
-        "daily": "weather_code,precipitation_sum,rain_sum,et0_fao_evapotranspiration"
+        "timezone": "auto",
+        "forecast_days": 7,
+        "current": "temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m",
+        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset"
     }
     try:
         response = requests.get(OPEN_METEO_FORECAST_URL, params=base_params, timeout=12.0)
@@ -415,31 +414,6 @@ def get_weather():
         current_units = payload.get("current_units", {})
         daily = payload.get("daily", {})
         daily_units = payload.get("daily_units", {})
-        hourly = {}
-        try:
-            soil_response = requests.get(
-                OPEN_METEO_FORECAST_URL,
-                params={
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "timezone": "Asia/Kolkata",
-                    "forecast_days": 1,
-                    "hourly": "soil_temperature_6cm,soil_moisture_3_to_9cm,shortwave_radiation,direct_normal_irradiance"
-                },
-                timeout=12.0
-            )
-            soil_response.raise_for_status()
-            hourly = soil_response.json().get("hourly", {})
-        except requests.RequestException as error:
-            app.logger.warning("Open-Meteo soil/solar hourly request failed: %s", error)
-        hourly_index = {time: index for index, time in enumerate(hourly.get("time", []))}
-        current_hour = current.get("time")
-        soil_index = hourly_index.get(current_hour, 0)
-
-        def hourly_value(name):
-            values = hourly.get(name, [])
-            return values[soil_index] if soil_index < len(values) else None
-
         forecast = []
         for index, forecast_date in enumerate(daily.get("time", [])):
             code = (daily.get("weather_code") or [])[index]
@@ -447,9 +421,12 @@ def get_weather():
                 "date": forecast_date,
                 "weather_code": code,
                 "condition": weather_description(code),
-                "rainfall_mm": (daily.get("rain_sum") or [])[index],
+                "temperature_max_c": (daily.get("temperature_2m_max") or [])[index],
+                "temperature_min_c": (daily.get("temperature_2m_min") or [])[index],
                 "precipitation_mm": (daily.get("precipitation_sum") or [])[index],
-                "et0_mm": (daily.get("et0_fao_evapotranspiration") or [])[index]
+                "rain_probability_percent": (daily.get("precipitation_probability_max") or [])[index],
+                "sunrise": (daily.get("sunrise") or [])[index],
+                "sunset": (daily.get("sunset") or [])[index]
             })
 
         response_data = {
@@ -457,40 +434,27 @@ def get_weather():
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
-                "timezone": payload.get("timezone", "Asia/Kolkata"),
-                **reverse_geocode_india(latitude, longitude)
+                "timezone": payload.get("timezone", "auto")
             },
-            "observed_at": current_hour,
+            "observed_at": current.get("time"),
             "current": {
                 "temperature_c": current.get("temperature_2m"),
                 "relative_humidity_percent": current.get("relative_humidity_2m"),
                 "wind_speed_kmh": current.get("wind_speed_10m"),
-                "rainfall_mm": current.get("rain"),
                 "precipitation_mm": current.get("precipitation"),
-                "shortwave_radiation_w_m2": current.get("shortwave_radiation"),
-                "direct_normal_irradiance_w_m2": current.get("direct_normal_irradiance"),
+                "rainfall_mm": current.get("rain"),
                 "weather_code": current.get("weather_code"),
                 "condition": weather_description(current.get("weather_code")),
                 "units": {
                     "temperature": current_units.get("temperature_2m", "°C"),
                     "humidity": current_units.get("relative_humidity_2m", "%"),
                     "wind_speed": current_units.get("wind_speed_10m", "km/h"),
-                    "solar_radiation": current_units.get("shortwave_radiation", "W/m²"),
-                    "direct_normal_irradiance": current_units.get("direct_normal_irradiance", "W/m²")
+                    "precipitation": current_units.get("precipitation", "mm"),
+                    "rain": current_units.get("rain", "mm")
                 }
-            },
-            "agronomy": {
-                "et0_mm": forecast[0]["et0_mm"] if forecast else None,
-                "et0_unit": daily_units.get("et0_fao_evapotranspiration", "mm"),
-                "soil_temperature_6cm_c": hourly_value("soil_temperature_6cm"),
-                "soil_moisture_3_to_9cm_m3_m3": hourly_value("soil_moisture_3_to_9cm"),
-                "shortwave_radiation_w_m2": hourly_value("shortwave_radiation"),
-                "direct_normal_irradiance_w_m2": hourly_value("direct_normal_irradiance"),
-                "soil_moisture_note": "Volumetric water content for the 3-9 cm root zone"
             },
             "forecast": forecast,
             "alerts": weather_alerts(current, daily),
-            "alerts_note": "Advisory rules based on Open-Meteo data; not official IMD warnings.",
             "source": "Open-Meteo"
         }
         WEATHER_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
@@ -508,48 +472,6 @@ def get_weather():
     except (KeyError, IndexError, TypeError, ValueError) as error:
         app.logger.exception("Unexpected Open-Meteo response")
         return jsonify({"success": False, "error": f"Could not read weather data: {type(error).__name__}"}), 502
-
-@app.route("/api/weather/seasonal", methods=["GET"])
-def get_seasonal_weather():
-    """Return monthly precipitation trends from Open-Meteo's seasonal ensemble."""
-    latitude = safe_float(request.args.get("latitude"), None)
-    longitude = safe_float(request.args.get("longitude"), None)
-    if latitude is None or longitude is None:
-        return jsonify({"success": False, "error": "latitude and longitude are required."}), 400
-    if not (INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"] and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]):
-        return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
-
-    try:
-        response = requests.get(
-            OPEN_METEO_SEASONAL_URL,
-            params={
-                "latitude": latitude,
-                "longitude": longitude,
-                "timezone": "Asia/Kolkata",
-                "monthly": "precipitation_mean,temperature_2m_mean"
-            },
-            timeout=15.0
-        )
-        response.raise_for_status()
-        payload = response.json()
-        monthly = payload.get("monthly", {})
-        precipitation = monthly.get("precipitation_mean", [])
-        temperatures = monthly.get("temperature_2m_mean", [])
-        months = monthly.get("time", [])
-        return jsonify({
-            "success": True,
-            "location": {"latitude": latitude, "longitude": longitude, "timezone": payload.get("timezone", "Asia/Kolkata")},
-            "monthly": [
-                {"month": months[index], "precipitation_mm": precipitation[index], "temperature_c": temperatures[index]}
-                for index in range(min(len(months), len(precipitation), len(temperatures)))
-            ],
-            "source": "Open-Meteo Seasonal API"
-        })
-    except requests.RequestException as error:
-        app.logger.warning("Open-Meteo seasonal request failed: %s", error)
-        return jsonify({"success": False, "error": "Seasonal forecast is temporarily unavailable."}), 502
-    except (KeyError, IndexError, TypeError, ValueError) as error:
-        return jsonify({"success": False, "error": f"Could not read seasonal data: {type(error).__name__}"}), 502
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth

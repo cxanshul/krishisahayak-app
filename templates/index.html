@@ -214,40 +214,23 @@
                 <div class="form-header">
                     <div>
                         <h3 data-en="Weather, Soil & Irrigation Signals" data-hi="मौसम, मिट्टी और सिंचाई संकेत">Weather, Soil & Irrigation Signals</h3>
-                        <p class="subtitle" data-en="Open-Meteo data for any farm location in India, shown in India Standard Time." data-hi="भारत के किसी भी खेत के लिए Open-Meteo डेटा, भारतीय समय के अनुसार।">Open-Meteo data for any farm location in India, shown in India Standard Time.</p>
+                        <p class="subtitle" data-en="Real weather for your current GPS location." data-hi="आपके वर्तमान GPS स्थान का वास्तविक मौसम।">Real weather for your current GPS location.</p>
                     </div>
-                    <span class="weather-source">Open-Meteo</span>
+                    <a class="weather-source" href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data: Open-Meteo</a>
                 </div>
                 <div class="weather-location-form">
-                    <label for="weather-latitude">Latitude</label>
-                    <input id="weather-latitude" type="number" step="any" value="28.6139" min="6" max="37.5">
-                    <label for="weather-longitude">Longitude</label>
-                    <input id="weather-longitude" type="number" step="any" value="77.2090" min="68" max="98">
                     <button class="btn-secondary" type="button" onclick="useFarmLocation()">📍 Use my location</button>
-                    <button class="btn-secondary" type="button" onclick="fetchWeather()">↻ Refresh weather</button>
+                    <button class="btn-secondary" type="button" onclick="requestWeatherFromGps()">↻ Refresh weather</button>
                 </div>
-                <p id="weather-status" class="weather-status">Loading Delhi weather...</p>
+                <p id="weather-status" class="weather-status">Waiting for your GPS location...</p>
                 <div id="weather-alerts" class="weather-alerts"></div>
                 <div id="weather-metrics" class="weather-metrics-grid"></div>
                 <div class="weather-forecast-section">
                     <h4>Rainfall & irrigation outlook</h4>
                     <div class="ledger-table-container">
                         <table class="mandi-table weather-table">
-                            <thead><tr><th>Date</th><th>Condition</th><th>Rainfall</th><th>ET0</th></tr></thead>
+                            <thead><tr><th>Date</th><th>Condition</th><th>Temperature</th><th>Rain</th><th>Probability</th><th>Sunrise</th><th>Sunset</th></tr></thead>
                             <tbody id="weather-forecast"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="weather-forecast-section">
-                    <div class="section-bar">
-                        <h4>Seasonal precipitation outlook</h4>
-                        <button class="btn-secondary" type="button" onclick="fetchSeasonalWeather()">Refresh seasonal view</button>
-                    </div>
-                    <p id="seasonal-status" class="weather-status">Loading monthly ensemble trends...</p>
-                    <div class="ledger-table-container">
-                        <table class="mandi-table weather-table">
-                            <thead><tr><th>Month</th><th>Expected precipitation</th><th>Mean temperature</th></tr></thead>
-                            <tbody id="seasonal-forecast"></tbody>
                         </table>
                     </div>
                 </div>
