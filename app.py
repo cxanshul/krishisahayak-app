@@ -38,6 +38,11 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
 GEMINI_KEY = env_value("GEMINI_API_KEY")
 DATAGOV_KEY = env_value("DATAGOV_API_KEY")
+DATAGOV_RESOURCE_ID = env_value("DATAGOV_RESOURCE_ID", "9ef84268-d588-465a-a308-a864a43d0070")
+SECONDARY_MANDI_API_URL = env_value("SECONDARY_MANDI_API_URL")
+SECONDARY_AI_KEY = env_value("SECONDARY_AI_API_KEY")
+SECONDARY_AI_URL = env_value("SECONDARY_AI_API_URL", "https://api.openai.com/v1/chat/completions")
+SECONDARY_AI_MODEL = env_value("SECONDARY_AI_MODEL", "gpt-4o-mini")
 SUPABASE_URL = env_value("SUPABASE_URL")
 SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
@@ -72,6 +77,40 @@ gemini_client = (
     if GEMINI_KEY
     else None
 )
+
+def secondary_ai_response(contents, json_mode=False, max_tokens=512):
+    """Call an optional OpenAI-compatible provider after the primary AI fails."""
+    if not SECONDARY_AI_KEY:
+        return None
+
+    text_parts = [item for item in contents if isinstance(item, str)]
+    message_content = [{"type": "text", "text": "\n\n".join(text_parts)}]
+    for item in contents:
+        if isinstance(item, Image.Image):
+            buffer = BytesIO()
+            item.save(buffer, format="JPEG")
+            message_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode()}"}
+            })
+
+    payload = {
+        "model": SECONDARY_AI_MODEL,
+        "messages": [{"role": "user", "content": message_content}],
+        "max_tokens": max_tokens
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+
+    response = requests.post(
+        SECONDARY_AI_URL,
+        headers={"Authorization": f"Bearer {SECONDARY_AI_KEY}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=120
+    )
+    response.raise_for_status()
+    choices = response.json().get("choices", [])
+    return choices[0].get("message", {}).get("content") if choices else None
 
 # ============================================================
 # COMPREHENSIVE MANDI DATABASE & BENCHMARKS
@@ -567,7 +606,7 @@ def analyze_and_add_produce():
         recommendation = "Maintain regular ventilation and store in a cool, dry area."
         processing_idea = "Standard wholesale grading and sorting."
 
-        if gemini_client:
+        if gemini_client or SECONDARY_AI_KEY:
             prompt = f"""
 Analyze post-harvest crop quality:
 - Crop: {crop_name}, Variety: {variety}, Field: {field_name}
@@ -587,6 +626,7 @@ Respond strictly in valid JSON:
             img = decode_image(image_base64)
             if img:
                 contents.append(img)
+            ai_text = None
             try:
                 response = gemini_client.models.generate_content(
                     model=GEMINI_MODEL,
@@ -597,16 +637,24 @@ Respond strictly in valid JSON:
                         thinking_config=types.ThinkingConfig(thinking_level="low")
                     )
                 )
-                if response.text:
-                    ai_res = json.loads(response.text)
+                ai_text = response.text
+            except Exception as e:
+                print(f"Gemini quality error: {e}")
+                try:
+                    ai_text = secondary_ai_response(contents, json_mode=True, max_tokens=256)
+                except Exception as fallback_error:
+                    print(f"Secondary quality AI error: {fallback_error}")
+            try:
+                if ai_text:
+                    ai_res = json.loads(ai_text)
                     quality_grade = ai_res.get("quality_grade", quality_grade)
                     defects = ai_res.get("defect_summary", defects)
                     spoilage_risk = ai_res.get("spoilage_risk", spoilage_risk)
                     shelf_life_days = int(ai_res.get("shelf_life_days", shelf_life_days))
                     recommendation = ai_res.get("recommendation", recommendation)
                     processing_idea = ai_res.get("processing_idea", processing_idea)
-            except Exception as e:
-                print(f"Gemini quality error: {e}")
+            except (TypeError, ValueError, json.JSONDecodeError) as e:
+                print(f"AI quality response parsing error: {e}")
 
         new_batch = {
             "id": str(uuid.uuid4()),
@@ -674,7 +722,7 @@ def settle_sale():
         net_pl = revenue - combined_cost
 
         next_crop_plans = []
-        if gemini_client:
+        if gemini_client or SECONDARY_AI_KEY:
             prompt = f"""
 Farmer sold: {batch.get('crop_name')} ({batch.get('variety')}) from field: {batch.get('field_name')}.
 Combined Cost: Rs {combined_cost}, Revenue: Rs {revenue}, Net Profit: Rs {net_pl}.
@@ -702,6 +750,12 @@ Recommend 2 optimal crop rotation plans in valid JSON:
                     next_crop_plans = json.loads(rec_res.text)
             except Exception as e:
                 print(f"Gemini rotation error: {e}")
+                try:
+                    fallback_text = secondary_ai_response([prompt], json_mode=True, max_tokens=256)
+                    if fallback_text:
+                        next_crop_plans = json.loads(fallback_text)
+                except Exception as fallback_error:
+                    print(f"Secondary rotation AI error: {fallback_error}")
 
         batch.update({
             "status": "sold",
@@ -748,20 +802,26 @@ def get_mandi_rates():
 
     if DATAGOV_KEY:
         try:
-            endpoint = "9ef84268-d588-465a-a308-a864a43d0070"
-            url = (
-                f"https://api.data.gov.in/resource/{endpoint}"
-                f"?api-key={DATAGOV_KEY}"
-                "&format=json"
-                "&limit=100"
-            )
+            params = {"api-key": DATAGOV_KEY, "format": "json", "limit": 100}
             if state:
-                url += f"&filters[state]={state}"
+                params["filters[state]"] = state
             if commodity:
-                url += f"&filters[commodity]={commodity}"
+                params["filters[commodity]"] = commodity
 
-            resp = requests.get(url, timeout=8.0)
-            gov_records = resp.json().get("records", []) if resp.status_code == 200 else []
+            resp = requests.get(
+                f"https://api.data.gov.in/resource/{DATAGOV_RESOURCE_ID}",
+                params=params,
+                timeout=8.0
+            )
+            if resp.status_code != 200:
+                app.logger.warning("Data.gov mandi API returned HTTP %s", resp.status_code)
+                gov_records = []
+            else:
+                payload = resp.json()
+                gov_records = payload.get("records", [])
+                if not isinstance(gov_records, list):
+                    app.logger.warning("Data.gov mandi API returned an invalid records field")
+                    gov_records = []
 
             if gov_records:
                 # Remove duplicates so farmers don't see the exact same crop twice
@@ -790,6 +850,41 @@ def get_mandi_rates():
                 source = "live_datagov"
         except Exception as e:
             print(f"Data.gov API fetch error: {e}")
+
+    if not records and SECONDARY_MANDI_API_URL:
+        try:
+            params = {"format": "json", "limit": 100}
+            if commodity:
+                params["commodity"] = commodity
+            if state:
+                params["state"] = state
+            if district:
+                params["district"] = district
+
+            resp = requests.get(SECONDARY_MANDI_API_URL, params=params, timeout=8.0)
+            resp.raise_for_status()
+            payload = resp.json()
+            secondary_records = payload.get("records", payload.get("data", payload.get("results", [])))
+            if isinstance(secondary_records, list):
+                for r in secondary_records:
+                    arr_date = r.get("arrival_date") or r.get("arrivalDate") or today_str
+                    records.append({
+                        "state": r.get("state") or r.get("state_name", ""),
+                        "district": r.get("district") or r.get("district_name", ""),
+                        "market": r.get("market") or r.get("market_name", ""),
+                        "commodity": r.get("commodity") or r.get("commodity_name", ""),
+                        "variety": r.get("variety") or r.get("variety_name", "General"),
+                        "min_price": safe_float(r.get("min_price", r.get("minPrice", 0))),
+                        "max_price": safe_float(r.get("max_price", r.get("maxPrice", 0))),
+                        "modal_price": safe_float(r.get("modal_price", r.get("modalPrice", 0))),
+                        "arrival_date": arr_date,
+                        "is_today": (arr_date == today_str),
+                        "price_type": "Secondary Government Mandi Data"
+                    })
+                if records:
+                    source = "secondary_gov"
+        except (requests.RequestException, ValueError, TypeError) as e:
+            print(f"Secondary mandi API fetch error: {e}")
 
     # Fallback Data Execution
     if not records:
@@ -820,7 +915,11 @@ def get_mandi_rates():
     response_data = {
         "success": True,
         "source": source,
-        "source_label": "Live Data.gov.in APMC records" if source == "live_datagov" else "Fallback benchmark records; government API unavailable",
+        "source_label": (
+            "Live Data.gov.in APMC records" if source == "live_datagov"
+            else "Secondary government mandi API records" if source == "secondary_gov"
+            else "Fallback benchmark records; government APIs unavailable"
+        ),
         "total_records": len(records),
         "records": records
     }
@@ -911,9 +1010,9 @@ def assistant_chat():
         image_base64 = data.get("image_base64", None)
         lang = data.get("lang", "en").strip()
 
-        if not gemini_client:
+        if not gemini_client and not SECONDARY_AI_KEY:
             return jsonify({
-                "error": "GEMINI_API_KEY is not configured on the server.",
+                "error": "No AI provider is configured on the server.",
                 "updated_batches": user_batches(current_user()["id"])
             }), 503
 
@@ -941,19 +1040,31 @@ ACTION_UPDATE: {{"batch_id": "<id>", "storage_type": "<val>", "recommendation": 
             contents.append(pil_img)
 
         try:
-            response = gemini_client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=1536,
-                    thinking_config=types.ThinkingConfig(thinking_level="low")
+            if gemini_client:
+                response = gemini_client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        max_output_tokens=1536,
+                        thinking_config=types.ThinkingConfig(thinking_level="low")
+                    )
                 )
-            )
-            reply_text = response.text or ("कोई उत्तर प्राप्त नहीं हुआ।" if lang == "hi" else "I could not generate a response. Please try again.")
+                reply_text = response.text
+            else:
+                reply_text = None
         except Exception as e:
-            app.logger.exception("Gemini assistant request failed (model=%s)", GEMINI_MODEL)
+            app.logger.warning("Gemini assistant request failed; trying secondary AI: %s", e)
+            reply_text = None
+
+        if not reply_text and SECONDARY_AI_KEY:
+            try:
+                reply_text = secondary_ai_response(contents, max_tokens=1536)
+            except Exception as e:
+                app.logger.exception("Secondary assistant request failed")
+
+        if not reply_text:
             return jsonify({
-                "error": f"Gemini request failed: {type(e).__name__}",
+                "error": "Both AI providers failed to return a response.",
                 "updated_batches": user_batches(current_user()["id"])
             }), 502
 
