@@ -407,8 +407,24 @@ def get_weather():
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset"
     }
     try:
-        response = requests.get(OPEN_METEO_FORECAST_URL, params=base_params, timeout=12.0)
-        response.raise_for_status()
+        response = None
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = requests.get(OPEN_METEO_FORECAST_URL, params=base_params, timeout=12.0)
+                if response.status_code == 429 and attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                response.raise_for_status()
+                break
+            except requests.RequestException as retry_error:
+                last_error = retry_error
+                if attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise
+        if response is None:
+            raise last_error or requests.RequestException("No response from Open-Meteo")
         payload = response.json()
         current = payload.get("current", {})
         current_units = payload.get("current_units", {})
@@ -773,14 +789,7 @@ def get_mandi_rates():
     records = []
     source = "unavailable"
 
-    try:
-        records = fetch_open_mandi_records(commodity, state, district)
-        if records:
-            source = "live_mandi_api"
-    except (requests.RequestException, ValueError, TypeError) as error:
-        app.logger.warning("Keyless mandi API fetch failed: %s", error)
-
-    if not records and DATAGOV_KEY:
+    if DATAGOV_KEY:
         try:
             params = {"api-key": DATAGOV_KEY, "format": "json", "limit": DATAGOV_MAX_RESULTS}
             if state:
@@ -830,6 +839,14 @@ def get_mandi_rates():
                 source = "live_datagov"
         except Exception as e:
             print(f"Data.gov API fetch error: {e}")
+
+    if not records:
+        try:
+            records = fetch_open_mandi_records(commodity, state, district)
+            if records:
+                source = "live_mandi_api"
+        except (requests.RequestException, ValueError, TypeError) as error:
+            app.logger.warning("Keyless mandi API fetch failed: %s", error)
 
     if not records and SECONDARY_MANDI_API_URL:
         try:
