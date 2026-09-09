@@ -1453,3 +1453,11 @@ html::before {
     }
     .auth-card { transform: none !important; }
 }
+.nav-group-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.55;
+    margin: 18px 4px 6px;
+    font-weight: 600;
+}
