@@ -75,6 +75,9 @@
             <button class="btn-quick-demo" onclick="fillDemoBatch()">
                 ⚡ <span data-en="Load Tomato Demo" data-hi="डेमो लोड करें (टमाटर)">Load Tomato Demo</span>
             </button>
+            <button class="btn-quick-demo btn-tomato-test" onclick="fillTomatoTest()">
+                🧪 <span data-en="Load Tomato Test" data-hi="टमाटर टेस्ट लोड करें">Load Tomato Test</span>
+            </button>
         </header>
 
         <section class="ledger-stat-strip">
@@ -228,21 +231,21 @@
                     <a class="weather-source" href="https://www.accuweather.com/" target="_blank" rel="noopener">Weather data: AccuWeather</a>
                 </div>
                 <div class="weather-location-form">
-                    <button class="btn-secondary" type="button" onclick="useFarmLocation()">📍 Use my location</button>
-                    <button class="btn-secondary" type="button" onclick="requestWeatherFromGps()">↻ Refresh weather</button>
+                    <button class="btn-secondary" type="button" onclick="useFarmLocation()" data-en="📍 Use my location" data-hi="📍 मेरा स्थान उपयोग करें">📍 Use my location</button>
+                    <button class="btn-secondary" type="button" onclick="requestWeatherFromGps()" data-en="↻ Refresh weather" data-hi="↻ मौसम रीफ्रेश करें">↻ Refresh weather</button>
                 </div>
                 <p id="weather-status" class="weather-status">Waiting for your GPS location...</p>
                 <div id="weather-alerts" class="weather-alerts"></div>
                 <div id="weather-metrics" class="weather-metrics-grid"></div>
                 <div class="weather-action-box">
                     <div>
-                        <strong>AI crop protection action</strong>
-                        <p id="weather-action-result" class="weather-status">Analyze today and tomorrow's weather for one practical action.</p>
+                        <strong data-en="AI crop protection action" data-hi="एआई फसल सुरक्षा सलाह">AI crop protection action</strong>
+                    <p id="weather-action-result" class="weather-status" data-en="Analyze today and tomorrow's weather for one practical action." data-hi="आज और कल के मौसम के आधार पर एक उपयोगी सलाह पाएं।">Analyze today and tomorrow's weather for one practical action.</p>
                     </div>
-                    <button id="weather-action-button" class="btn-secondary" type="button" onclick="generateWeatherAction()">Analyze</button>
+                    <button id="weather-action-button" class="btn-secondary" type="button" onclick="generateWeatherAction()" data-en="Analyze" data-hi="जांचें">Analyze</button>
                 </div>
                 <div class="weather-forecast-section">
-                    <h4>Rainfall & irrigation outlook</h4>
+                    <h4 data-en="Rainfall & irrigation outlook" data-hi="वर्षा और सिंचाई पूर्वानुमान">Rainfall & irrigation outlook</h4>
                     <div class="ledger-table-container">
                         <table class="mandi-table weather-table">
                             <thead><tr><th>Date</th><th>Condition</th><th>Temperature</th><th>Rain</th><th>Probability</th><th>Sunrise</th><th>Sunset</th></tr></thead>
@@ -389,8 +392,8 @@
 
                 <form id="produce-form" onsubmit="handleProduceSubmit(event)">
                     <div class="crop-registration-mode">
-                        <label class="crop-mode-option"><input type="radio" name="crop_status" value="harvested" checked onchange="toggleCropRegistrationMode()"><span>Harvested Crop Registration</span></label>
-                        <label class="crop-mode-option"><input type="radio" name="crop_status" value="growing" onchange="toggleCropRegistrationMode()"><span>Current Growing Crop</span></label>
+                        <label class="crop-mode-option"><input type="radio" name="crop_status" value="harvested" checked onchange="toggleCropRegistrationMode()"><span data-en="Harvested Crop Registration" data-hi="कटाई की गई फसल दर्ज करें">Harvested Crop Registration</span></label>
+                        <label class="crop-mode-option"><input type="radio" name="crop_status" value="growing" onchange="toggleCropRegistrationMode()"><span data-en="Current Growing Crop" data-hi="वर्तमान बढ़ती फसल">Current Growing Crop</span></label>
                     </div>
                     <div class="form-grid">
                         <div class="form-group">

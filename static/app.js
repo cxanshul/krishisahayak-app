@@ -24,7 +24,31 @@ const translations = {
         voiceChatStatus: "Voice Chat",
         voiceNotSupported: "Speech recognition is not supported in this browser. Please use Chrome/Edge.",
         micBlocked: "Microphone permission was denied. Please allow microphone access in browser settings.",
-        voiceError: "Voice input failed. Please try again or type your message."
+        voiceError: "Voice input failed. Please try again or type your message.",
+        batches: "Batches",
+        records: "Records",
+        activeBatch: "Select Active Batch",
+        storedVolume: "Stored Volume",
+        spoilageRisk: "Spoilage Risk",
+        storage: "Storage",
+        processing: "Processing",
+        daysLeft: "Days left",
+        currentGrowingCrop: "Current Growing Crop",
+        suggestedHarvest: "Suggested harvest",
+        sale: "Settle Sale ➔",
+        noStored: "No active stored produce batches.",
+        noHistory: "No completed sales history recorded yet.",
+        nextCropTitle: "AI Next Crop Recommendations for this Field:",
+        nextCropFallbackTitle: "Suggested Next Crops:",
+        qtyProducedSold: "Qty Produced / Sold",
+        sellingPrice: "Selling Price",
+        totalRevenue: "Total Revenue",
+        totalCost: "Total Cost",
+        demoLoaded: "Tomato test data loaded. Review it and register the crop for AI analysis.",
+        testLoaded: "Tomato test loaded with sample costs. Review the values before calculating.",
+        noWeatherWarnings: "No rule-based weather warnings right now.",
+        weatherUnavailable: "No real weather data is available for your location right now.",
+        weatherNeedsGps: "Weather requires your GPS location."
     },
     hi: {
         analyzing: "⏳ जेमिनी एआई द्वारा गुणवत्ता व सड़न जांच जारी है...",
@@ -40,9 +64,37 @@ const translations = {
         voiceChatStatus: "आवाज संवाद",
         voiceNotSupported: "इस ब्राउज़र में आवाज पहचान उपलब्ध नहीं है। कृपया Chrome का उपयोग करें।",
         micBlocked: "माइक्रोफ़ोन अनुमति नहीं मिली। कृपया ब्राउज़र सेटिंग में अनुमति दें।",
-        voiceError: "आवाज पहचान में त्रुटि हुई। कृपया पुनः प्रयास करें।"
+        voiceError: "आवाज पहचान में त्रुटि हुई। कृपया पुनः प्रयास करें।",
+        batches: "बैच",
+        records: "रिकॉर्ड",
+        activeBatch: "सक्रिय बैच चुनें",
+        storedVolume: "भंडारित मात्रा",
+        spoilageRisk: "सड़न जोखिम",
+        storage: "भंडारण",
+        processing: "प्रसंस्करण",
+        daysLeft: "दिन शेष",
+        currentGrowingCrop: "वर्तमान बढ़ती फसल",
+        suggestedHarvest: "अनुमानित कटाई",
+        sale: "बिक्री दर्ज करें ➔",
+        noStored: "कोई सक्रिय भंडारित फसल नहीं है।",
+        noHistory: "कोई पुराना बिक्री रिकॉर्ड उपलब्ध नहीं है।",
+        nextCropTitle: "इस खेत के लिए एआई अगली फसल सुझाव:",
+        nextCropFallbackTitle: "अगली फसल के सुझाव:",
+        qtyProducedSold: "उत्पादित / बेची मात्रा",
+        sellingPrice: "विक्रय मूल्य",
+        totalRevenue: "कुल आय",
+        totalCost: "कुल लागत",
+        demoLoaded: "टमाटर टेस्ट डेटा लोड हो गया। समीक्षा करके एआई जांच के लिए फसल दर्ज करें।",
+        testLoaded: "टमाटर टेस्ट लागत के साथ लोड हो गया। गणना से पहले मानों की समीक्षा करें।",
+        noWeatherWarnings: "अभी कोई नियम-आधारित मौसम चेतावनी नहीं है।",
+        weatherUnavailable: "इस समय आपके स्थान के लिए वास्तविक मौसम डेटा उपलब्ध नहीं है।",
+        weatherNeedsGps: "मौसम देखने के लिए GPS स्थान आवश्यक है।"
     }
 };
+
+function t(key) {
+    return translations[currentLang][key] || translations.en[key] || key;
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     try {
@@ -124,6 +176,13 @@ function setLanguage(lang) {
     const chatLangIndicator = document.getElementById("chat-lang-indicator");
     if (chatLangIndicator) {
         chatLangIndicator.innerText = (currentLang === 'hi') ? 'EN' : 'HI';
+    }
+
+    const weatherAction = document.getElementById('weather-action-result');
+    if (weatherAction && !weatherCache?.data) weatherAction.textContent = currentLang === 'hi' ? 'पहले GPS मौसम लोड करें, फिर जांचें।' : 'Load your GPS weather first, then analyze.';
+    const weatherStatus = document.getElementById('weather-status');
+    if (weatherStatus && (!weatherStatus.textContent || weatherStatus.textContent.includes('Waiting'))) {
+        weatherStatus.textContent = currentLang === 'hi' ? 'आपके GPS स्थान की प्रतीक्षा है...' : 'Waiting for your GPS location...';
     }
 
     renderAllViews();
@@ -344,10 +403,10 @@ function renderStoredProduce() {
 
     const activeList = produceBatches.filter(b => b.status === "active");
     const storedCount = document.getElementById("stored-count");
-    if (storedCount) storedCount.innerText = `${activeList.length} ${currentLang === 'hi' ? 'बैच' : 'Batches'}`;
+    if (storedCount) storedCount.innerText = `${activeList.length} ${t('batches')}`;
 
     if (activeList.length === 0) {
-        container.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 14px;">${currentLang === 'hi' ? 'कोई सक्रिय भंडारित फसल नहीं है।' : 'No active stored produce batches.'}</div>`;
+        container.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 14px;">${t('noStored')}</div>`;
         return;
     }
 
@@ -363,24 +422,24 @@ function renderStoredProduce() {
                 <span class="detail-lbl" style="margin-top: 4px;">${isGrowing ? 'Current Growing Crop' : b.storage_type}</span>
             </div>
             <div>
-                <span class="detail-lbl">${currentLang === 'hi' ? 'भंडारित मात्रा' : 'Stored Volume'}</span>
+                <span class="detail-lbl">${t('storedVolume')}</span>
                 <span class="detail-val">${parseFloat(b.quantity_kg).toLocaleString()} KG</span>
                 <small style="color: var(--text-muted);">Grade: <strong>${b.quality_grade || 'A'}</strong></small>
             </div>
             <div>
-                <span class="detail-lbl">${currentLang === 'hi' ? 'सड़न जोखिम' : 'Spoilage Risk'}</span>
+                <span class="detail-lbl">${t('spoilageRisk')}</span>
                 <span class="detail-val text-${b.spoilage_risk === 'High' ? 'risk' : 'green'}">
-                    ${isGrowing ? `Suggested harvest: ${b.suggested_harvest_date || 'Pending AI analysis'}` : `${b.spoilage_risk} (${b.shelf_life_days} ${currentLang === 'hi' ? 'दिन शेष' : 'Days'})`}
+                    ${isGrowing ? `${t('suggestedHarvest')}: ${b.suggested_harvest_date || (currentLang === 'hi' ? 'एआई जांच बाकी' : 'Pending AI analysis')}` : `${b.spoilage_risk} (${b.shelf_life_days} ${t('daysLeft')})`}
                 </span>
                 <small style="display:block; font-size:11px; color:var(--text-muted);">${b.defect_summary || ''}</small>
             </div>
             <div class="batch-advisory">
-                <strong>💡 ${currentLang === 'hi' ? 'भंडारण निर्देश' : 'Storage'}:</strong> ${b.recommendation}<br>
-                <strong>⚙️ ${currentLang === 'hi' ? 'प्रसंस्करण' : 'Processing'}:</strong> ${b.processing_idea}
+                <strong>💡 ${t('storage')}:</strong> ${b.recommendation}<br>
+                <strong>⚙️ ${t('processing')}:</strong> ${b.processing_idea}
             </div>
             <div>
                 <button type="button" class="btn-secondary" onclick="openSettlementForBatch('${b.id}')">
-                    ${currentLang === 'hi' ? 'बिक्री दर्ज करें ➔' : 'Settle Sale ➔'}
+                    ${t('sale')}
                 </button>
             </div>
         `;
@@ -391,7 +450,7 @@ function renderStoredProduce() {
 function populateSettlementDropdown() {
     const select = document.getElementById("settle_batch_id");
     if (!select) return;
-    select.innerHTML = `<option value="">-- ${currentLang === 'hi' ? 'सक्रिय बैच चुनें' : 'Select Active Batch'} --</option>`;
+    select.innerHTML = `<option value="">-- ${t('activeBatch')} --</option>`;
     
     const activeList = produceBatches.filter(b => b.status === "active");
     activeList.forEach(b => {
@@ -426,10 +485,10 @@ function renderHistoryProduce() {
 
     const soldList = produceBatches.filter(b => b.status === "sold");
     const histCount = document.getElementById("history-count");
-    if (histCount) histCount.innerText = `${soldList.length} ${currentLang === 'hi' ? 'रिकॉर्ड' : 'Records'}`;
+    if (histCount) histCount.innerText = `${soldList.length} ${t('records')}`;
 
     if (soldList.length === 0) {
-        container.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 14px;">${currentLang === 'hi' ? 'कोई पुराना बिक्री रिकॉर्ड उपलब्ध नहीं है।' : 'No completed sales history recorded yet.'}</div>`;
+        container.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 14px;">${t('noHistory')}</div>`;
         return;
     }
 
@@ -438,13 +497,17 @@ function renderHistoryProduce() {
         const card = document.createElement("div");
         card.className = "history-card";
         
+        const nextCropPlans = b.next_crop_recommendation?.length ? b.next_crop_recommendation : [
+            { crop: b.crop_name === 'Tomato' ? 'Potato' : 'Tomato', reason: currentLang === 'hi' ? 'फसल चक्र से मिट्टी का संतुलन बनाए रखने और जोखिम कम करने में मदद मिलती है।' : 'Crop rotation can help maintain soil balance and reduce production risk.', roi_potential: 'Medium', water_need: 'Medium' },
+            { crop: 'Pulses', reason: currentLang === 'hi' ? 'दलहनी फसल मिट्टी में नाइट्रोजन बढ़ाने और अगली फसल की लागत घटाने में मदद कर सकती है।' : 'A pulse crop can improve soil nitrogen and reduce input costs for the next cycle.', roi_potential: 'Medium', water_need: 'Low' }
+        ];
         let rotationHtml = "";
-        if (b.next_crop_recommendation && b.next_crop_recommendation.length > 0) {
+        if (nextCropPlans.length > 0) {
             rotationHtml = `
                 <div class="next-crop-container">
-                    <div class="next-crop-title">🌱 ${currentLang === 'hi' ? 'एआई अगली फसल सुझाव (भूमि एवं मौसम अनुसार):' : 'AI Next Crop Recommendations for this Field:'}</div>
+                    <div class="next-crop-title">🌱 ${b.next_crop_recommendation?.length ? t('nextCropTitle') : t('nextCropFallbackTitle')}</div>
                     <div class="next-crop-items">
-                        ${b.next_crop_recommendation.map(rec => `
+                        ${nextCropPlans.map(rec => `
                             <div class="crop-plan-item">
                                 <strong>${rec.crop}</strong> <small style="color:var(--turmeric-dark);">[ROI: ${rec.roi_potential} | Water: ${rec.water_need}]</small>
                                 <p style="margin-top:4px; font-size:11.5px; color:var(--text-muted);">${rec.reason}</p>
@@ -470,19 +533,19 @@ function renderHistoryProduce() {
 
             <div class="history-financial-grid">
                 <div>
-                    <span class="detail-lbl">${currentLang === 'hi' ? 'उत्पादित / बेची मात्रा' : 'Qty Produced / Sold'}</span>
+                    <span class="detail-lbl">${t('qtyProducedSold')}</span>
                     <span class="detail-val">${b.quantity_kg} / ${b.sold_quantity_kg} KG</span>
                 </div>
                 <div>
-                    <span class="detail-lbl">${currentLang === 'hi' ? 'विक्रय मूल्य' : 'Selling Price'}</span>
+                    <span class="detail-lbl">${t('sellingPrice')}</span>
                     <span class="detail-val">₹ ${b.selling_price_per_kg} / KG</span>
                 </div>
                 <div>
-                    <span class="detail-lbl">${currentLang === 'hi' ? 'कुल आय (Revenue)' : 'Total Revenue'}</span>
+                    <span class="detail-lbl">${t('totalRevenue')}</span>
                     <span class="detail-val text-green">₹ ${b.total_revenue.toLocaleString()}</span>
                 </div>
                 <div>
-                    <span class="detail-lbl">${currentLang === 'hi' ? 'कुल लागत (Combined)' : 'Total Cost'}</span>
+                    <span class="detail-lbl">${t('totalCost')}</span>
                     <span class="detail-val">₹ ${b.total_combined_cost.toLocaleString()}</span>
                 </div>
             </div>
@@ -692,6 +755,28 @@ function fillDemoBatch() {
     if (storage) storage.value = "Open Air Jute Bags";
     
     switchTab('add-batch');
+    showToast(t('demoLoaded'), 'info');
+}
+
+function fillTomatoTest() {
+    const crop = document.getElementById("calc_crop");
+    const area = document.getElementById("calc_area");
+    const seed = document.getElementById("calc_seed");
+    const fert = document.getElementById("calc_fert");
+    const pest = document.getElementById("calc_pest");
+    const irrig = document.getElementById("calc_irrig");
+    const labour = document.getElementById("calc_labour");
+    const mach = document.getElementById("calc_mach");
+    const fuel = document.getElementById("calc_fuel");
+    const misc = document.getElementById("calc_misc");
+    if (crop) crop.value = "Tomato";
+    if (area) area.value = "2";
+    [seed, fert, pest, irrig, labour, mach, fuel, misc].forEach((input, index) => {
+        if (input) input.value = [8000, 6500, 3500, 4500, 9000, 5000, 3500, 2000][index];
+    });
+    switchTab('pre-cost');
+    handlePreCostCalculation();
+    showToast(t('testLoaded'), 'info');
 }
 
 // ============================================================
@@ -965,7 +1050,7 @@ async function fetchWeather(latitude, longitude) {
         status.textContent = `${data.location.latitude.toFixed(4)}, ${data.location.longitude.toFixed(4)} · ${data.location.timezone} · ${current.condition}`;
         const alerts = document.getElementById("weather-alerts");
         if (alerts) {
-            alerts.innerHTML = (data.alerts || []).map(alert => `<div class="weather-alert ${alert.level}">⚠️ ${alert.message}</div>`).join("") || `<div class="weather-alert clear">✓ No rule-based weather warnings right now.</div>`;
+            alerts.innerHTML = (data.alerts || []).map(alert => `<div class="weather-alert ${alert.level}">⚠️ ${alert.message}</div>`).join("") || `<div class="weather-alert clear">✓ ${t('noWeatherWarnings')}</div>`;
         }
         metrics.innerHTML = [
             ["Temperature", `${current.temperature_c ?? "-"} °C`, "🌡️"],
@@ -980,7 +1065,7 @@ async function fetchWeather(latitude, longitude) {
     } catch (error) {
         status.textContent = `Weather unavailable: ${error.message}`;
         metrics.innerHTML = "";
-        forecast.innerHTML = "<tr><td colspan=\"7\">No real weather data is available for your location right now.</td></tr>";
+        forecast.innerHTML = `<tr><td colspan="7">${t('weatherUnavailable')}</td></tr>`;
     }
 }
 
@@ -1036,7 +1121,7 @@ function requestWeatherFromGps() {
             const message = error.code === 1 ? "Location permission was denied. Allow location access to see real weather." : "Could not read your location. Weather was not loaded.";
             if (status) status.textContent = message;
             document.getElementById("weather-metrics").innerHTML = "";
-            document.getElementById("weather-forecast").innerHTML = "<tr><td colspan=\"7\">Weather requires your GPS location.</td></tr>";
+            document.getElementById("weather-forecast").innerHTML = `<tr><td colspan="7">${t('weatherNeedsGps')}</td></tr>`;
         })
         .finally(() => { weatherRequestPromise = null; });
     return weatherRequestPromise;

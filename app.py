@@ -725,6 +725,22 @@ Recommend 2 optimal crop rotation plans in valid JSON:
                 except Exception as fallback_error:
                     print(f"Secondary rotation AI error: {fallback_error}")
 
+        if not isinstance(next_crop_plans, list) or not next_crop_plans:
+            next_crop_plans = [
+                {
+                    "crop": "Potato" if batch.get("crop_name", "").lower() == "tomato" else "Tomato",
+                    "reason": "Crop rotation can help maintain soil balance and reduce production risk.",
+                    "roi_potential": "Medium",
+                    "water_need": "Medium"
+                },
+                {
+                    "crop": "Pulses",
+                    "reason": "A pulse crop can improve soil nitrogen and reduce input costs for the next cycle.",
+                    "roi_potential": "Medium",
+                    "water_need": "Low"
+                }
+            ]
+
         batch.update({
             "status": "sold",
             "sold_quantity_kg": sold_qty,
