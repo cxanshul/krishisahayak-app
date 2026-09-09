@@ -44,8 +44,7 @@ const translations = {
         sellingPrice: "Selling Price",
         totalRevenue: "Total Revenue",
         totalCost: "Total Cost",
-        demoLoaded: "Tomato test data loaded. Review it and register the crop for AI analysis.",
-        testLoaded: "Tomato test loaded with sample costs. Review the values before calculating.",
+        demoLoaded: "Tomato demo data loaded. Review it and register the crop for AI analysis.",
         noWeatherWarnings: "No rule-based weather warnings right now.",
         weatherUnavailable: "No real weather data is available for your location right now.",
         weatherNeedsGps: "Weather requires your GPS location."
@@ -84,8 +83,7 @@ const translations = {
         sellingPrice: "विक्रय मूल्य",
         totalRevenue: "कुल आय",
         totalCost: "कुल लागत",
-        demoLoaded: "टमाटर टेस्ट डेटा लोड हो गया। समीक्षा करके एआई जांच के लिए फसल दर्ज करें।",
-        testLoaded: "टमाटर टेस्ट लागत के साथ लोड हो गया। गणना से पहले मानों की समीक्षा करें।",
+        demoLoaded: "टमाटर डेमो डेटा लोड हो गया। समीक्षा करके एआई जांच के लिए फसल दर्ज करें।",
         noWeatherWarnings: "अभी कोई नियम-आधारित मौसम चेतावनी नहीं है।",
         weatherUnavailable: "इस समय आपके स्थान के लिए वास्तविक मौसम डेटा उपलब्ध नहीं है।",
         weatherNeedsGps: "मौसम देखने के लिए GPS स्थान आवश्यक है।"
@@ -756,27 +754,6 @@ function fillDemoBatch() {
     
     switchTab('add-batch');
     showToast(t('demoLoaded'), 'info');
-}
-
-function fillTomatoTest() {
-    const crop = document.getElementById("calc_crop");
-    const area = document.getElementById("calc_area");
-    const seed = document.getElementById("calc_seed");
-    const fert = document.getElementById("calc_fert");
-    const pest = document.getElementById("calc_pest");
-    const irrig = document.getElementById("calc_irrig");
-    const labour = document.getElementById("calc_labour");
-    const mach = document.getElementById("calc_mach");
-    const fuel = document.getElementById("calc_fuel");
-    const misc = document.getElementById("calc_misc");
-    if (crop) crop.value = "Tomato";
-    if (area) area.value = "2";
-    [seed, fert, pest, irrig, labour, mach, fuel, misc].forEach((input, index) => {
-        if (input) input.value = [8000, 6500, 3500, 4500, 9000, 5000, 3500, 2000][index];
-    });
-    switchTab('pre-cost');
-    handlePreCostCalculation();
-    showToast(t('testLoaded'), 'info');
 }
 
 // ============================================================
