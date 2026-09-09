@@ -171,6 +171,22 @@ def decode_image(image_base64):
         print(f"Image decode error: {e}")
         return None
 
+def fallback_next_crop_plan(crop_name):
+    return [
+        {
+            "crop": "Potato" if crop_name.lower() == "tomato" else "Tomato",
+            "reason": "Crop rotation can help maintain soil balance and reduce production risk.",
+            "roi_potential": "Medium",
+            "water_need": "Medium"
+        },
+        {
+            "crop": "Pulses",
+            "reason": "A pulse crop can improve soil nitrogen and reduce input costs for the next cycle.",
+            "roi_potential": "Medium",
+            "water_need": "Low"
+        }
+    ]
+
 def weather_description(weather_code):
     descriptions = {
         0: "Clear sky",
@@ -564,6 +580,7 @@ def analyze_and_add_produce():
         recommendation = "Continue regular field monitoring and follow crop-specific care."
         processing_idea = "Standard wholesale grading and sorting."
         suggested_harvest_date = harvest_date if crop_status == "harvested" else None
+        next_crop_recommendation = fallback_next_crop_plan(crop_name) if crop_status == "harvested" else []
 
         if gemini_client or SECONDARY_AI_KEY:
             prompt = f"""
@@ -580,7 +597,10 @@ Respond strictly in valid JSON:
     "shelf_life_days": integer_days_remaining,
     "recommendation": "Storage instructions",
     "processing_idea": "Value-addition/processing idea",
-    "suggested_harvest_date": "YYYY-MM-DD"
+    "suggested_harvest_date": "YYYY-MM-DD",
+    "next_crop_recommendation": [
+        {{"crop": "Crop Name", "reason": "Short agronomic reason", "roi_potential": "High/Medium", "water_need": "Low/Medium/High"}}
+    ]
 }}
 For a growing crop, suggest a harvest date based on the crop, variety, planting date, and visible maturity. For a harvested crop, use the supplied harvest date.
 """
@@ -616,6 +636,8 @@ For a growing crop, suggest a harvest date based on the crop, variety, planting 
                     shelf_life_days = int(ai_res.get("shelf_life_days", shelf_life_days))
                     recommendation = ai_res.get("recommendation", recommendation)
                     processing_idea = ai_res.get("processing_idea", processing_idea)
+                    if crop_status == "harvested" and isinstance(ai_res.get("next_crop_recommendation"), list) and ai_res.get("next_crop_recommendation"):
+                        next_crop_recommendation = ai_res["next_crop_recommendation"][:3]
                     if crop_status == "growing":
                         suggested_harvest_date = ai_res.get("suggested_harvest_date") or suggested_harvest_date
             except (TypeError, ValueError, json.JSONDecodeError) as e:
@@ -652,7 +674,7 @@ For a growing crop, suggest a harvest date based on the crop, variety, planting 
             "total_combined_cost": production_cost,
             "total_revenue": 0,
             "net_profit_loss": 0,
-            "next_crop_recommendation": []
+            "next_crop_recommendation": next_crop_recommendation
         }
 
         if not supabase:
@@ -726,20 +748,7 @@ Recommend 2 optimal crop rotation plans in valid JSON:
                     print(f"Secondary rotation AI error: {fallback_error}")
 
         if not isinstance(next_crop_plans, list) or not next_crop_plans:
-            next_crop_plans = [
-                {
-                    "crop": "Potato" if batch.get("crop_name", "").lower() == "tomato" else "Tomato",
-                    "reason": "Crop rotation can help maintain soil balance and reduce production risk.",
-                    "roi_potential": "Medium",
-                    "water_need": "Medium"
-                },
-                {
-                    "crop": "Pulses",
-                    "reason": "A pulse crop can improve soil nitrogen and reduce input costs for the next cycle.",
-                    "roi_potential": "Medium",
-                    "water_need": "Low"
-                }
-            ]
+            next_crop_plans = fallback_next_crop_plan(batch.get("crop_name", "Produce"))
 
         batch.update({
             "status": "sold",
@@ -1025,6 +1034,19 @@ def assistant_chat():
         image_base64 = data.get("image_base64", None)
         lang = data.get("lang", "en").strip()
 
+        relevant_terms = (
+            "farm", "farmer", "crop", "crops", "plant", "soil", "seed", "sowing", "harvest", "yield", "weather",
+            "rain", "irrigation", "water", "fertilizer", "pesticide", "disease", "storage", "spoilage", "mandi",
+            "market price", "profit", "cost", "sale", "selling", "tomato", "wheat", "potato", "onion", "खेत",
+            "किसान", "फसल", "पौधा", "मिट्टी", "बीज", "बुवाई", "कटाई", "पैदावार", "मौसम", "बारिश", "सिंचाई",
+            "खाद", "कीटनाशक", "बीमारी", "भंडारण", "मंडी", "भाव", "मुनाफा", "लागत", "बिक्री"
+        )
+        if not user_message and not image_base64:
+            return jsonify({"reply": "Please ask a farming, crop, weather, mandi, or farm-finance question.", "updated_batches": user_batches(current_user()["id"])})
+        if not image_base64 and not any(term in user_message.lower() for term in relevant_terms):
+            reply = "मैं केवल खेती, फसल, मौसम, मंडी, भंडारण और कृषि लागत/मुनाफे से जुड़े सवालों में मदद कर सकता हूँ।" if lang == "hi" else "I can help only with farming, crops, weather, mandi prices, storage, and farm costs or profits."
+            return jsonify({"reply": reply, "updated_batches": user_batches(current_user()["id"])})
+
         if not gemini_client and not SECONDARY_AI_KEY:
             return jsonify({
                 "error": "No AI provider is configured on the server.",
@@ -1037,6 +1059,7 @@ def assistant_chat():
         system_instruction = f"""
 You are KrishiSahayak, an agronomist and financial advisor for Indian farmers.
 Always respond strictly in: {target_lang}.
+Only answer questions directly related to farming, crops, soil, weather, irrigation, crop health, storage, mandi markets, farm costs, sales, profit, or crop planning. For anything unrelated, politely say that you only support those topics and do not answer the unrelated request.
 
 Farmer's Stored Batches Database:
 {batches_context}

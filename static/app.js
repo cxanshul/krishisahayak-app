@@ -411,6 +411,19 @@ function renderStoredProduce() {
     activeList.forEach(b => {
         const isGrowing = b.crop_status === "growing";
         const riskClass = b.spoilage_risk === "High" ? "risk-high" : (b.spoilage_risk === "Medium" ? "risk-medium" : "risk-low");
+        const nextCropHtml = !isGrowing && b.next_crop_recommendation?.length ? `
+            <div class="next-crop-container stored-next-crop">
+                <div class="next-crop-title">🌱 ${t('nextCropTitle')}</div>
+                <div class="next-crop-items">
+                    ${b.next_crop_recommendation.slice(0, 3).map(rec => `
+                        <div class="crop-plan-item">
+                            <strong>${rec.crop}</strong> <small style="color:var(--turmeric-dark);">[ROI: ${rec.roi_potential} | ${currentLang === 'hi' ? 'पानी' : 'Water'}: ${rec.water_need}]</small>
+                            <p style="margin-top:4px; font-size:11.5px; color:var(--text-muted);">${rec.reason}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        ` : '';
         const card = document.createElement("div");
         card.className = `batch-card ${riskClass}`;
         card.innerHTML = `
@@ -435,6 +448,7 @@ function renderStoredProduce() {
                 <strong>💡 ${t('storage')}:</strong> ${b.recommendation}<br>
                 <strong>⚙️ ${t('processing')}:</strong> ${b.processing_idea}
             </div>
+            ${nextCropHtml}
             <div>
                 <button type="button" class="btn-secondary" onclick="openSettlementForBatch('${b.id}')">
                     ${t('sale')}

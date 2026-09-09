@@ -522,6 +522,10 @@ body {
     border: 1px dashed var(--border-ledger);
 }
 
+.batch-card .stored-next-crop {
+    grid-column: 1 / -1;
+}
+
 .history-cards-grid { display: flex; flex-direction: column; gap: 20px; }
 
 .history-card {
