@@ -738,6 +738,7 @@ async function handleProduceSubmit(e) {
 }
 
 function fillDemoBatch() {
+    const activePanel = document.querySelector('.tab-panel.active')?.id;
     const crop = document.getElementById("crop_name");
     const variety = document.getElementById("crop_variety");
     const field = document.getElementById("field_name");
@@ -751,8 +752,28 @@ function fillDemoBatch() {
     if (qty) qty.value = "1500";
     if (unit) unit.value = "kg";
     if (storage) storage.value = "Open Air Jute Bags";
+
+    const calcCrop = document.getElementById("calc_crop");
+    const calcArea = document.getElementById("calc_area");
+    if (calcCrop) calcCrop.value = "Tomato";
+    if (calcArea) calcArea.value = "2";
+    const calculatorCosts = {
+        calc_seed: 8000,
+        calc_fert: 6500,
+        calc_pest: 3500,
+        calc_irrig: 4500,
+        calc_labour: 9000,
+        calc_mach: 5000,
+        calc_fuel: 3500,
+        calc_misc: 2000
+    };
+    Object.entries(calculatorCosts).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+    });
+    handlePreCostCalculation();
     
-    switchTab('add-batch');
+    if (activePanel !== 'tab-pre-cost') switchTab('add-batch');
     showToast(t('demoLoaded'), 'info');
 }
 
