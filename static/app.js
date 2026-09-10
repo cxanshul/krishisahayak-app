@@ -1250,8 +1250,13 @@ function loadGooglePlaces() {
     return window.googlePlacesPromise;
 }
 
+const GOOGLE_STORAGE_SEARCH_RADIUS_METERS = 50000; // Places API (New) caps locationBias circle at 50km
+
 async function searchGoogleStorage(userLat, userLng, queries) {
-    if (!window.GOOGLE_PLACES_API_KEY) return [];
+    if (!window.GOOGLE_PLACES_API_KEY) {
+        console.warn('[storage-finder] GOOGLE_PLACES_API_KEY was not injected into the page — check app.py\'s render_template call and your .env value.');
+        return [];
+    }
     const places = new Map();
     for (const query of queries.slice(0, 3)) {
         const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
@@ -1267,7 +1272,7 @@ async function searchGoogleStorage(userLat, userLng, queries) {
                 locationBias: {
                     circle: {
                         center: { latitude: userLat, longitude: userLng },
-                        radius: 50000
+                        radius: GOOGLE_STORAGE_SEARCH_RADIUS_METERS
                     }
                 },
                 maxResultCount: 20
@@ -1280,6 +1285,9 @@ async function searchGoogleStorage(userLat, userLng, queries) {
                 const parsed = JSON.parse(message);
                 reason = parsed.error?.message || parsed.error?.status || reason;
             } catch (_) { /* body wasn't JSON, keep the raw status */ }
+            // Log the raw response too — the parsed "reason" is sometimes generic
+            // (e.g. "API_KEY_SERVICE_BLOCKED"), and the full body pinpoints the fix.
+            console.error(`[storage-finder] Google Places request failed for query "${query}":`, message);
             throw new Error(`Google Places error: ${reason}`);
         }
         const data = await response.json();
@@ -1456,8 +1464,9 @@ async function findNearestStorage() {
                 );
             } catch (error) {
                 googleSearchError = error;
+                console.error('[storage-finder] Google Places search failed:', error);
             }
-            let radiusLabel = 200;
+            let radiusLabel = GOOGLE_STORAGE_SEARCH_RADIUS_METERS / 1000;
             let usedFallback = false;
 
             if (facilities.length === 0) {
