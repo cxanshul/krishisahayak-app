@@ -1235,6 +1235,47 @@ function runTextSearch(service, query, location, radius) {
     });
 }
 
+function loadGooglePlaces() {
+    if (window.google?.maps?.places) return Promise.resolve(true);
+    if (!window.GOOGLE_MAPS_API_KEY) return Promise.resolve(false);
+    if (window.googlePlacesPromise) return window.googlePlacesPromise;
+    window.googlePlacesPromise = new Promise(resolve => {
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(window.GOOGLE_MAPS_API_KEY)}&libraries=places`;
+        script.async = true;
+        script.onload = () => resolve(Boolean(window.google?.maps?.places));
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+    });
+    return window.googlePlacesPromise;
+}
+
+async function searchGoogleStorage(userLat, userLng, queries) {
+    if (!await loadGooglePlaces()) return [];
+    const location = new google.maps.LatLng(userLat, userLng);
+    const service = new google.maps.places.PlacesService(document.createElement('div'));
+    const results = new Map();
+    for (const query of queries.slice(0, 3)) {
+        const response = await runTextSearch(service, query, location, 200000);
+        if (response.status === google.maps.places.PlacesServiceStatus.OK) {
+            response.results.forEach(place => {
+                if (place.place_id && place.geometry?.location) results.set(place.place_id, place);
+            });
+        }
+    }
+    return Array.from(results.values()).map(place => ({
+        name: place.name,
+        address: place.formatted_address || place.vicinity || '',
+        facility_type: 'Google Places facility',
+        available_capacity: 'Contact facility',
+        contact_number: place.formatted_phone_number || '',
+        latitude: place.geometry.location.lat(),
+        longitude: place.geometry.location.lng(),
+        distance_meters: haversineKm(userLat, userLng, place.geometry.location.lat(), place.geometry.location.lng()) * 1000,
+        place_id: place.place_id
+    }));
+}
+
 function renderStorageResults(facilities, userLat, userLng, radiusKm = 200) {
     const resultsEl = document.getElementById('storage-finder-results');
     const mapEl = document.getElementById('storage-finder-map');
@@ -1352,12 +1393,23 @@ async function findNearestStorage() {
         renderStorageRecommendation(storagePlan);
 
         try {
-            statusEl.innerText = 'Searching Supabase for nearby storage facilities...';
-            const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
-            const data = await readJsonResponse(response, 'Storage facility search failed.');
-            let facilities = data.facilities || [];
-            let radiusLabel = data.radius_km;
+            statusEl.innerText = 'Searching Google Maps for nearby storage facilities...';
+            let facilities = await searchGoogleStorage(
+                userLat,
+                userLng,
+                storagePlan.search_queries || ['cold storage', 'agricultural warehouse']
+            );
+            let radiusLabel = 200;
             let usedFallback = false;
+
+            if (facilities.length === 0) {
+                statusEl.innerText = 'Google Maps found no results; checking registered facilities...';
+                const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
+                const data = await readJsonResponse(response, 'Storage facility search failed.');
+                facilities = data.facilities || [];
+                radiusLabel = data.radius_km;
+                usedFallback = true;
+            }
 
             if (facilities.length === 0) {
                 statusEl.innerText = 'No registered facilities nearby — checking OpenStreetMap for warehouses/storage in your area...';
@@ -1383,7 +1435,7 @@ async function findNearestStorage() {
             if (!renderStorageResults(facilities, userLat, userLng, radiusLabel)) {
                 statusEl.innerText = `No storage facilities were found within ${radiusLabel || 200} km (checked both the registered directory and OpenStreetMap).`;
             } else if (usedFallback) {
-                statusEl.innerText = `No registered facilities nearby — showing ${facilities.length} facility(s) found on OpenStreetMap within 100 km:`;
+                statusEl.innerText = `Google Maps had no matching facilities — showing ${facilities.length} registered facility(s) within ${radiusLabel} km:`;
             }
         } catch (error) {
             statusEl.innerText = error.message;
