@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCqFKkOevq5XKJ56cfi8GrBtNqQFk16O3M&libraries=places"></script>
 </head>
 <body>
 
@@ -479,6 +480,20 @@
         </div>
 
     </main>
+
+    <div id="storage-finder-modal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="storage-finder-title">
+        <div class="profile-card">
+            <div class="form-header">
+                <div><h3 id="storage-finder-title">Find nearest storage facility</h3><p class="subtitle" id="storage-finder-subtitle">Finding storage for: —</p></div>
+                <button class="btn-close-profile" onclick="closeStorageFinder()" type="button">×</button>
+            </div>
+            <div class="profile-actions" style="margin-bottom:12px;">
+                <button class="auth-submit" type="button" id="storage-finder-locate-btn" onclick="findNearestStorage()">📍 Use my location & search</button>
+            </div>
+            <div id="storage-finder-status" style="font-size:13px; color:var(--text-muted); margin-bottom:8px;"></div>
+            <div id="storage-finder-results" class="batch-cards-grid"></div>
+        </div>
+    </div>
 
     <div id="profile-modal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-title">
         <div class="profile-card">

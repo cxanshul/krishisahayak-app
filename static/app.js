@@ -453,6 +453,9 @@ function renderStoredProduce() {
                 <button type="button" class="btn-secondary" onclick="openSettlementForBatch('${b.id}')">
                     ${t('sale')}
                 </button>
+                <button type="button" class="btn-secondary" onclick="openStorageFinder('${b.id}')">
+                    📍 Find Storage
+                </button>
             </div>
         `;
         container.appendChild(card);
@@ -1191,4 +1194,98 @@ async function deleteMyAccountData() {
     const data = await response.json();
     if (!response.ok || !data.success) { showToast(data.error || "Deletion failed.", "error"); return; }
     window.location.href = "/auth";
+}
+// ===== Nearest Storage Facility Finder (Google Maps Places) =====
+let storageFinderBatchId = null;
+
+function openStorageFinder(batchId) {
+    storageFinderBatchId = batchId;
+    const batch = produceBatches.find(b => b.id === batchId);
+    const subtitle = document.getElementById('storage-finder-subtitle');
+    if (subtitle) subtitle.innerText = batch ? `Finding storage for: ${batch.crop_name} (${batch.quantity_kg} KG)` : 'Finding storage for: —';
+    document.getElementById('storage-finder-results').innerHTML = '';
+    document.getElementById('storage-finder-status').innerText = '';
+    document.getElementById('storage-finder-modal').classList.remove('hidden');
+}
+
+function closeStorageFinder() {
+    document.getElementById('storage-finder-modal').classList.add('hidden');
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findNearestStorage() {
+    const statusEl = document.getElementById('storage-finder-status');
+    const resultsEl = document.getElementById('storage-finder-results');
+    const btn = document.getElementById('storage-finder-locate-btn');
+
+    if (!navigator.geolocation) {
+        statusEl.innerText = 'Geolocation is not supported on this device/browser.';
+        return;
+    }
+    if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
+        statusEl.innerText = 'Map service failed to load. Check your internet connection and try again.';
+        return;
+    }
+
+    btn.disabled = true;
+    statusEl.innerText = 'Getting your location...';
+    resultsEl.innerHTML = '';
+
+    navigator.geolocation.getCurrentPosition(position => {
+        const userLat = position.coords.latitude;
+        const userLng = position.coords.longitude;
+        statusEl.innerText = 'Searching nearby storage facilities...';
+
+        const mapDiv = document.createElement('div');
+        const service = new google.maps.places.PlacesService(mapDiv);
+        const request = {
+            location: new google.maps.LatLng(userLat, userLng),
+            radius: 25000,
+            keyword: 'cold storage warehouse godown agricultural storage'
+        };
+
+        service.nearbySearch(request, (results, status) => {
+            btn.disabled = false;
+            if (status !== google.maps.places.PlacesServiceStatus.OK || !results || results.length === 0) {
+                statusEl.innerText = 'No storage facilities found nearby. Try again later or widen your search area.';
+                return;
+            }
+
+            const withDistance = results.map(place => ({
+                place,
+                distanceKm: haversineKm(userLat, userLng, place.geometry.location.lat(), place.geometry.location.lng())
+            })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 8);
+
+            statusEl.innerText = `Found ${withDistance.length} facility(s) near you, sorted by distance:`;
+            resultsEl.innerHTML = withDistance.map(({ place, distanceKm }) => {
+                const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${place.geometry.location.lat()},${place.geometry.location.lng()}&destination_place_id=${place.place_id}`;
+                return `
+                    <div class="batch-card">
+                        <div>
+                            <span class="crop-title">${place.name}</span>
+                            <small style="display:block; color: var(--text-muted);">${place.vicinity || ''}</small>
+                        </div>
+                        <div>
+                            <span class="detail-lbl">Distance</span>
+                            <span class="detail-val">${distanceKm.toFixed(1)} km</span>
+                            ${place.rating ? `<small style="color: var(--text-muted);">Rating: ${place.rating} ⭐ (${place.user_ratings_total || 0})</small>` : ''}
+                        </div>
+                        <div>
+                            <a class="btn-secondary" style="display:inline-block; text-decoration:none; text-align:center;" href="${directionsUrl}" target="_blank" rel="noopener">Get Directions</a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        });
+    }, error => {
+        btn.disabled = false;
+        statusEl.innerText = 'Could not get your location. Please allow location access and try again.';
+    }, { enableHighAccuracy: true, timeout: 10000 });
 }
