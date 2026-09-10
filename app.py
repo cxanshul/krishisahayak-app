@@ -632,6 +632,64 @@ def get_weather():
         app.logger.exception("Unexpected AccuWeather response")
         return jsonify({"success": False, "error": "Could not read AccuWeather data. Please try again."}), 502
 
+@app.route("/api/weather/action-suggestion", methods=["POST"])
+@require_auth
+def weather_action_suggestion():
+    data = request.json or {}
+    crop = str(data.get("crop", "the crop")).strip() or "the crop"
+    current = data.get("current") or {}
+    forecast = data.get("forecast") or []
+    if not isinstance(forecast, list):
+        forecast = []
+
+    rain_probability = max(
+        [safe_float(day.get("rain_probability_percent")) for day in forecast[:2] if isinstance(day, dict)] or [0]
+    )
+    rainfall = sum(
+        safe_float(day.get("precipitation_mm")) for day in forecast[:2] if isinstance(day, dict)
+    )
+    temperature = safe_float(current.get("temperature_c"), None)
+    condition = str(current.get("condition", "")).strip()
+    fallback = (
+        f"For {crop}, check drainage and avoid spraying if rain is likely in the next 48 hours. "
+        f"Rain probability is about {rain_probability:.0f}% and forecast rainfall is {rainfall:.1f} mm."
+        if rain_probability >= 50 or rainfall >= 5
+        else f"For {crop}, inspect soil moisture before irrigating and monitor the crop once today. "
+             f"Current conditions are {condition or 'stable'} with no strong rain signal."
+    )
+    if temperature is not None and temperature <= 5:
+        fallback = f"Protect {crop} from cold stress tonight and avoid excess irrigation. " + fallback
+
+    if not gemini_client and not SECONDARY_AI_KEY:
+        return jsonify({"success": True, "suggestion": fallback, "source": "rule_based"})
+
+    prompt = f"""
+You are advising an Indian farmer. Give exactly one practical crop-protection action in 2 short sentences.
+Crop: {crop}
+Current weather: {json.dumps(current, ensure_ascii=False)}
+Next two days forecast: {json.dumps(forecast[:2], ensure_ascii=False)}
+Return plain text only, with no JSON, markdown, or preamble.
+"""
+    suggestion = None
+    try:
+        if gemini_client:
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[prompt],
+                config=types.GenerateContentConfig(max_output_tokens=180)
+            )
+            suggestion = (response.text or "").strip()
+    except Exception as error:
+        app.logger.warning("Gemini weather action failed: %s", error)
+
+    if not suggestion and SECONDARY_AI_KEY:
+        try:
+            suggestion = (secondary_ai_response([prompt], max_tokens=180) or "").strip()
+        except Exception as error:
+            app.logger.warning("Secondary weather action failed: %s", error)
+
+    return jsonify({"success": True, "suggestion": suggestion or fallback, "source": "ai" if suggestion else "rule_based"})
+
 @app.route("/api/storage/search", methods=["GET"])
 @require_auth
 def search_storage_facilities():
@@ -1205,6 +1263,56 @@ def calculate_pre_cost():
 # ============================================================
 # AI ASSISTANT CHAT WITH LANGUAGE SUPPORT
 # ============================================================
+
+@app.route("/api/assistant/translate", methods=["POST"])
+@require_auth
+def translate_assistant_messages():
+    data = request.json or {}
+    messages = data.get("messages") or []
+    target_lang = "Hindi (हिंदी)" if data.get("target_lang") == "hi" else "English"
+    if not isinstance(messages, list) or not messages:
+        return jsonify({"success": True, "translations": []})
+    if not gemini_client and not SECONDARY_AI_KEY:
+        return jsonify({"success": False, "error": "No AI provider is configured on the server."}), 503
+
+    prompt = f"""
+Translate each message into {target_lang} while preserving its meaning and tone.
+Return only valid JSON in this exact shape: {{"translations": ["..."]}}
+Keep the same number and order of messages. Do not add commentary.
+Messages:
+{json.dumps([str(message) for message in messages], ensure_ascii=False)}
+"""
+    response_text = None
+    try:
+        if gemini_client:
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=1536,
+                    thinking_config=types.ThinkingConfig(thinking_level="low")
+                )
+            )
+            response_text = response.text
+    except Exception as error:
+        app.logger.warning("Gemini chat translation failed: %s", error)
+
+    if not response_text and SECONDARY_AI_KEY:
+        try:
+            response_text = secondary_ai_response([prompt], json_mode=True, max_tokens=1536)
+        except Exception as error:
+            app.logger.warning("Secondary chat translation failed: %s", error)
+
+    try:
+        parsed = json.loads(response_text or "{}")
+        translations = parsed.get("translations", []) if isinstance(parsed, dict) else parsed
+        if not isinstance(translations, list) or len(translations) != len(messages):
+            raise ValueError("Translation response had an unexpected shape.")
+        return jsonify({"success": True, "translations": [str(item) for item in translations]})
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
+        app.logger.warning("Chat translation response parsing failed: %s", error)
+        return jsonify({"success": False, "error": "Could not translate the existing chat."}), 502
 
 @app.route("/api/assistant/chat", methods=["POST"])
 @require_auth

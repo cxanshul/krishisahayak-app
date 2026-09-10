@@ -926,10 +926,10 @@ body {
 .risk-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border-ledger); font-size: 13px; }
 .risk-key { display: flex; align-items: center; gap: 9px; color: var(--text-muted); }
 .risk-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.risk-high { background: var(--risk-red); }
-.risk-medium { background: var(--turmeric); }
-.risk-low { background: var(--leaf-green); }
-.risk-na { background: #9ba696; }
+.risk-dot.risk-high { background: var(--risk-red); }
+.risk-dot.risk-medium { background: var(--turmeric); }
+.risk-dot.risk-low { background: var(--leaf-green); }
+.risk-dot.risk-na { background: #9ba696; }
 .table-head { align-items: center; }
 .admin-filter { width: 210px; border: 1px solid var(--border-ledger); padding: 9px 11px; font: 12px var(--font-sans); background: #fff; }
 .admin-table-wrap { overflow-x: auto; }

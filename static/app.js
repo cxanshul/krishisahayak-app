@@ -312,10 +312,31 @@ function setLanguage(lang) {
     handlePreCostCalculation();
 }
 
-function toggleChatLanguage() {
+async function toggleChatLanguage() {
     const nextLang = (currentLang === 'en') ? 'hi' : 'en';
     setLanguage(nextLang);
-    showToast(nextLang === 'hi' ? 'चैट भाषा हिंदी में बदली गई।' : 'Chat language switched to English.', 'info');
+    const messages = Array.from(document.querySelectorAll('#chat-messages .bot-msg, #chat-messages .user-msg'));
+    const originalMessages = messages.map(message => {
+        if (!message.dataset.originalText) message.dataset.originalText = message.innerText;
+        return message.dataset.originalText;
+    });
+
+    if (messages.length === 0) return;
+    try {
+        const response = await fetch('/api/assistant/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: originalMessages, target_lang: nextLang })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Translation failed.');
+        (data.translations || []).forEach((translation, index) => {
+            if (messages[index] && translation) messages[index].innerText = translation;
+        });
+        showToast(nextLang === 'hi' ? 'चैट हिंदी में बदल गई।' : 'Chat switched to English.', 'info');
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
 }
 
 async function loadBatches() {
