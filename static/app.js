@@ -9,6 +9,8 @@ let voiceDebounceTimer = null; // New timer to wait before sending
 let weatherRequestPromise = null;
 let weatherCache = null;
 let farmerProfile = null;
+let storageFinderMap = null;
+let storageFinderLayer = null;
 
 const translations = {
     en: {
@@ -113,6 +115,20 @@ document.addEventListener("DOMContentLoaded", () => {
 async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/auth";
+}
+
+async function loadProfile() {
+    const response = await fetch("/api/profile");
+    if (response.status === 401) {
+        window.location.href = "/auth";
+        return;
+    }
+    if (!response.ok) throw new Error(`Profile request failed (${response.status})`);
+
+    const data = await response.json();
+    farmerProfile = data.profile || null;
+    const displayName = document.getElementById("display-farmer");
+    if (displayName && farmerProfile?.full_name) displayName.innerText = farmerProfile.full_name;
 }
 
 async function deleteAllProduce() {
@@ -1126,6 +1142,30 @@ function haversineKm(lat1, lon1, lat2, lon2) {
     return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function openStorageFinder(batchId) {
+    const modal = document.getElementById('storage-finder-modal');
+    const statusEl = document.getElementById('storage-finder-status');
+    const resultsEl = document.getElementById('storage-finder-results');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    if (statusEl) statusEl.innerText = batchId ? 'Preparing storage search...' : '';
+    if (resultsEl) resultsEl.innerHTML = '';
+    findNearestStorage();
+}
+
+function closeStorageFinder() {
+    const modal = document.getElementById('storage-finder-modal');
+    if (storageFinderMap) {
+        storageFinderMap.remove();
+        storageFinderMap = null;
+        storageFinderLayer = null;
+    }
+    if (modal) modal.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
 function renderStorageResults(facilities, userLat, userLng, radiusKm = 100) {
     const resultsEl = document.getElementById('storage-finder-results');
     const mapEl = document.getElementById('storage-finder-map');
@@ -1142,7 +1182,7 @@ function renderStorageResults(facilities, userLat, userLng, radiusKm = 100) {
     L.marker([userLat, userLng], { icon: farmIcon }).addTo(storageFinderLayer).bindPopup('<strong>Your Farm</strong>');
     const withDistance = facilities.map(facility => ({
         facility,
-        distanceKm: Number(facility.distance_meters || 0) / 1000
+        distanceKm: Number(facility.distance_km || facility.distance_meters / 1000 || 0)
     })).sort((a, b) => a.distanceKm - b.distanceKm);
 
     if (withDistance.length === 0) return false;
