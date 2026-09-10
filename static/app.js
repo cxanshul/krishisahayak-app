@@ -194,6 +194,51 @@ async function saveProfile(event) {
     }
 }
 
+function useFarmLocation() {
+    if (!navigator.geolocation) {
+        showToast("Location is not supported by this browser.", "error");
+        return;
+    }
+
+    const status = document.getElementById("weather-status");
+    if (status) status.textContent = "Getting your farm location...";
+    navigator.geolocation.getCurrentPosition(
+        async position => {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            farmerProfile = {
+                ...(farmerProfile || {}),
+                latitude,
+                longitude
+            };
+            await fetchWeather(latitude, longitude);
+        },
+        error => {
+            if (status) status.textContent = error.code === error.PERMISSION_DENIED
+                ? "Location permission was denied. Enter coordinates in Profile."
+                : "Could not access your location. Try again or use Profile coordinates.";
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+}
+
+async function requestWeatherFromGps() {
+    if (weatherRequestPromise) return weatherRequestPromise;
+
+    const latitude = Number(farmerProfile?.latitude);
+    const longitude = Number(farmerProfile?.longitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        weatherRequestPromise = fetchWeather(latitude, longitude).finally(() => {
+            weatherRequestPromise = null;
+        });
+        return weatherRequestPromise;
+    }
+
+    const status = document.getElementById("weather-status");
+    if (status) status.textContent = "Save your farm location in Profile or use your current location.";
+    return null;
+}
+
 async function deleteAllProduce() {
     const confirmed = window.confirm("Delete all your registered crop data from Supabase? This cannot be undone.");
     if (!confirmed) return;
