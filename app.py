@@ -50,6 +50,7 @@ SUPABASE_URL = env_value("SUPABASE_URL")
 SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 GOOGLE_MAPS_API_KEY = env_value("GOOGLE_MAPS_API_KEY")
+GOOGLE_PLACES_API_KEY = env_value("GOOGLE_PLACES_API_KEY", GOOGLE_MAPS_API_KEY)
 STORAGE_SEARCH_RADIUS_METERS = max(50000, min(int(env_value("STORAGE_SEARCH_RADIUS_METERS", "200000")), 1000000))
 ADMIN_EMAILS = {
     email.strip().lower()
@@ -403,7 +404,12 @@ def logout():
 @app.route("/")
 @require_auth
 def home():
-    return render_template("index.html", is_admin=is_admin(), google_maps_api_key=GOOGLE_MAPS_API_KEY)
+    return render_template(
+        "index.html",
+        is_admin=is_admin(),
+        google_maps_api_key=GOOGLE_MAPS_API_KEY,
+        google_places_api_key=GOOGLE_PLACES_API_KEY,
+    )
 
 @app.route("/admin")
 @require_admin

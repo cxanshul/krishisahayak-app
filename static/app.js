@@ -1251,14 +1251,14 @@ function loadGooglePlaces() {
 }
 
 async function searchGoogleStorage(userLat, userLng, queries) {
-    if (!window.GOOGLE_MAPS_API_KEY) return [];
+    if (!window.GOOGLE_PLACES_API_KEY) return [];
     const places = new Map();
     for (const query of queries.slice(0, 3)) {
         const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Goog-Api-Key': window.GOOGLE_MAPS_API_KEY,
+                'X-Goog-Api-Key': window.GOOGLE_PLACES_API_KEY,
                 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.internationalPhoneNumber'
             },
             body: JSON.stringify({

@@ -12,6 +12,9 @@
     {% if google_maps_api_key %}
     <script>window.GOOGLE_MAPS_API_KEY = {{ google_maps_api_key|tojson }};</script>
     {% endif %}
+    {% if google_places_api_key %}
+    <script>window.GOOGLE_PLACES_API_KEY = {{ google_places_api_key|tojson }};</script>
+    {% endif %}
 </head>
 <body>
 
