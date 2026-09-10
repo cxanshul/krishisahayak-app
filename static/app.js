@@ -1228,6 +1228,51 @@ function runTextSearch(service, query, location, radius) {
     });
 }
 
+function renderStorageResults(places, userLat, userLng, sourceLabel) {
+    const resultsEl = document.getElementById('storage-finder-results');
+    const withDistance = places.map(place => ({
+        place,
+        distanceKm: haversineKm(userLat, userLng, Number(place.lat ?? place.geometry?.location?.lat()), Number(place.lng ?? place.geometry?.location?.lng()))
+    })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 8);
+
+    if (withDistance.length === 0) return false;
+    document.getElementById('storage-finder-status').innerText = `Found ${withDistance.length} facility(s) near you via ${sourceLabel}, sorted by distance:`;
+    resultsEl.innerHTML = withDistance.map(({ place, distanceKm }) => {
+        const lat = Number(place.lat ?? place.geometry?.location?.lat());
+        const lng = Number(place.lng ?? place.geometry?.location?.lng());
+        const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${lat},${lng}`;
+        return `
+            <div class="batch-card">
+                <div><span class="crop-title">${place.name}</span><small style="display:block; color: var(--text-muted);">${place.formatted_address || place.vicinity || ''}</small></div>
+                <div><span class="detail-lbl">Distance</span><span class="detail-val">${distanceKm.toFixed(1)} km</span>${place.rating ? `<small style="color: var(--text-muted);">Rating: ${place.rating} ⭐ (${place.user_ratings_total || 0})</small>` : ''}</div>
+                <div><a class="btn-secondary" style="display:inline-block; text-decoration:none; text-align:center;" href="${directionsUrl}" target="_blank" rel="noopener">Get Directions</a></div>
+            </div>`;
+    }).join('');
+    return true;
+}
+
+async function searchStorageFallback(userLat, userLng) {
+    const response = await fetch(`/api/storage/search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Fallback search failed.');
+    return data.places || [];
+}
+
+async function recommendStorageForBatch(batch) {
+    const response = await fetch('/api/storage/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            crop_name: batch?.crop_name || 'Produce',
+            variety: batch?.variety || 'Not specified',
+            quantity_kg: batch?.quantity_kg || 0
+        })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Storage recommendation failed.');
+    return data;
+}
+
 async function findNearestStorage() {
     const statusEl = document.getElementById('storage-finder-status');
     const resultsEl = document.getElementById('storage-finder-results');
@@ -1237,23 +1282,40 @@ async function findNearestStorage() {
         statusEl.innerText = 'Geolocation is not supported on this device/browser.';
         return;
     }
-    if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
-        statusEl.innerText = 'Map service failed to load. Check your internet connection and try again.';
-        return;
-    }
-
     btn.disabled = true;
     statusEl.innerText = 'Getting your location...';
     resultsEl.innerHTML = '';
+    const batch = produceBatches.find(b => b.id === storageFinderBatchId) || {};
 
     navigator.geolocation.getCurrentPosition(async position => {
         const userLat = position.coords.latitude;
         const userLng = position.coords.longitude;
+        let storagePlan;
+        try {
+            statusEl.innerText = 'Gemini is identifying the right storage facility...';
+            storagePlan = await recommendStorageForBatch(batch);
+            statusEl.innerText = `${storagePlan.storage_type}: ${storagePlan.reason}`;
+        } catch (error) {
+            storagePlan = { search_queries: ['cold storage', 'agricultural warehouse', 'grain warehouse'] };
+        }
+        const hasGooglePlaces = typeof google !== 'undefined' && google.maps && google.maps.places;
+        if (!hasGooglePlaces) {
+            try {
+                const places = await searchStorageFallback(userLat, userLng);
+                if (!renderStorageResults(places, userLat, userLng, 'OpenStreetMap')) statusEl.innerText = 'No storage facilities were found within 60 km.';
+            } catch (error) {
+                statusEl.innerText = error.message;
+            } finally {
+                btn.disabled = false;
+            }
+            return;
+        }
+
         const location = new google.maps.LatLng(userLat, userLng);
         const mapDiv = document.createElement('div');
         const service = new google.maps.places.PlacesService(mapDiv);
 
-        const queries = ['cold storage', 'warehouse', 'godown', 'agricultural storage facility', 'grain storage'];
+        const queries = storagePlan.search_queries?.length ? storagePlan.search_queries : ['cold storage', 'agricultural warehouse'];
         const radii = [25000, 60000]; // widen automatically if nothing found nearby
 
         let merged = new Map();
@@ -1280,7 +1342,13 @@ async function findNearestStorage() {
 
         if (merged.size === 0) {
             if (sawRealError) {
-                statusEl.innerText = `Search failed (${sawRealError}). Check that "Places API" is enabled for this key in Google Cloud Console and that billing is active.`;
+                statusEl.innerText = `Google Places is unavailable (${sawRealError}). Trying the OpenStreetMap directory...`;
+                try {
+                    const places = await searchStorageFallback(userLat, userLng);
+                    if (!renderStorageResults(places, userLat, userLng, 'OpenStreetMap')) statusEl.innerText = 'No storage facilities were found within 60 km.';
+                } catch (error) {
+                    statusEl.innerText = `${error.message} Enable Places API and billing for Google results.`;
+                }
             } else {
                 statusEl.innerText = 'No storage facilities are listed on Google Maps within 60 km of your location.';
             }

@@ -59,6 +59,7 @@ ADMIN_EMAILS = {
 ACCUWEATHER_API_KEY = env_value("ACCUWEATHER_API_KEY")
 ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
 WEATHER_CACHE_TTL_SECONDS = 2700
 WEATHER_CACHE = {}
@@ -192,6 +193,16 @@ def fallback_next_crop_plan(crop_name):
             "water_need": "Low"
         }
     ]
+
+def fallback_storage_plan(crop_name):
+    crop = crop_name.lower()
+    if any(item in crop for item in ["potato", "onion", "apple"]):
+        return {"storage_type": "Cold storage warehouse", "search_queries": ["cold storage", "refrigerated warehouse"], "reason": "Temperature-controlled storage helps reduce moisture loss and sprouting."}
+    if any(item in crop for item in ["tomato", "fruit", "mango", "grape"]):
+        return {"storage_type": "Pre-cooling and cold storage facility", "search_queries": ["fruit cold storage", "pre cooling facility", "cold storage"], "reason": "Pre-cooling and controlled temperature can slow ripening and protect quality."}
+    if any(item in crop for item in ["wheat", "rice", "paddy", "maize", "gram", "chana", "soybean", "mustard"]):
+        return {"storage_type": "Grain warehouse or silo", "search_queries": ["grain warehouse", "agricultural warehouse", "silo"], "reason": "Dry, ventilated grain storage helps control moisture and pests."}
+    return {"storage_type": "Agricultural warehouse", "search_queries": ["agricultural warehouse", "farm storage warehouse", "cold storage"], "reason": "A clean, secure agricultural warehouse is a flexible short-term option."}
 
 def weather_description(weather_code):
     descriptions = {
@@ -623,6 +634,119 @@ def get_weather():
     except (KeyError, IndexError, TypeError, ValueError) as error:
         app.logger.exception("Unexpected AccuWeather response")
         return jsonify({"success": False, "error": "Could not read AccuWeather data. Please try again."}), 502
+
+@app.route("/api/storage/search", methods=["GET"])
+@require_auth
+def search_storage_facilities():
+    """Find storage-related places through OpenStreetMap when Google Places is unavailable."""
+    latitude = safe_float(request.args.get("latitude"), None)
+    longitude = safe_float(request.args.get("longitude"), None)
+    if latitude is None or longitude is None:
+        return jsonify({"success": False, "error": "latitude and longitude are required."}), 400
+    if not (
+        INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"]
+        and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]
+    ):
+        return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
+
+    query = f"""
+[out:json][timeout:20];
+(
+  nwr["name"~"cold|storage|warehouse|godown|grain|agricultur",i](around:60000,{latitude},{longitude});
+  nwr["building"~"warehouse|industrial",i](around:60000,{latitude},{longitude});
+);
+out center tags;
+"""
+    try:
+        response = requests.post(
+            OVERPASS_API_URL,
+            data=query,
+            headers={"User-Agent": "KrishiSahayak/1.0 (student agriculture project)"},
+            timeout=25.0,
+        )
+        response.raise_for_status()
+        places = []
+        seen = set()
+        for element in response.json().get("elements", []):
+            tags = element.get("tags", {})
+            point = element.get("center", element)
+            place_lat = point.get("lat")
+            place_lon = point.get("lon")
+            name = tags.get("name")
+            if not name or place_lat is None or place_lon is None:
+                continue
+            place_id = f"osm-{element.get('type')}-{element.get('id')}"
+            if place_id in seen:
+                continue
+            seen.add(place_id)
+            address = tags.get("addr:full") or ", ".join(
+                value for value in [tags.get("addr:street"), tags.get("addr:city"), tags.get("addr:state")] if value
+            )
+            places.append({
+                "place_id": place_id, "name": name, "formatted_address": address,
+                "lat": place_lat, "lng": place_lon, "source": "OpenStreetMap",
+            })
+        return jsonify({"success": True, "places": places})
+    except (requests.RequestException, ValueError, TypeError) as error:
+        app.logger.warning("Storage fallback search failed: %s", error)
+        return jsonify({"success": False, "error": "The storage directory is temporarily unavailable."}), 502
+
+@app.route("/api/storage/recommend", methods=["POST"])
+@require_auth
+def recommend_storage():
+    data = request.json or {}
+    crop_name = str(data.get("crop_name", "Produce")).strip() or "Produce"
+    variety = str(data.get("variety", "Not specified")).strip()
+    quantity_kg = safe_float(data.get("quantity_kg"), 0)
+    fallback = fallback_storage_plan(crop_name)
+    if not gemini_client and not SECONDARY_AI_KEY:
+        return jsonify({"success": True, "source": "rule_based", **fallback})
+
+    prompt = f"""
+You are an agricultural post-harvest expert in India. Recommend the most suitable physical storage facility for:
+Crop: {crop_name}
+Variety: {variety}
+Quantity: {quantity_kg:g} kg
+
+Return only valid JSON with this exact shape:
+{{
+  "storage_type": "specific facility type",
+  "search_queries": ["2 or 3 concise Google Maps search queries"],
+  "reason": "one short practical reason"
+}}
+Use facility terms that a local Google Maps search can find, such as cold storage, pre-cooling facility, grain warehouse, silo, ripening chamber, or agricultural warehouse.
+"""
+    try:
+        ai_text = None
+        if gemini_client:
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=256,
+                    thinking_config=types.ThinkingConfig(thinking_level="low")
+                )
+            )
+            ai_text = response.text
+        elif SECONDARY_AI_KEY:
+            ai_text = secondary_ai_response([prompt], json_mode=True, max_tokens=256)
+        recommendation = json.loads(ai_text or "{}")
+        storage_type = str(recommendation.get("storage_type", "")).strip()
+        queries = recommendation.get("search_queries")
+        reason = str(recommendation.get("reason", "")).strip()
+        if not storage_type or not isinstance(queries, list) or not queries:
+            raise ValueError("Incomplete storage recommendation")
+        return jsonify({
+            "success": True,
+            "source": "gemini" if gemini_client else "secondary_ai",
+            "storage_type": storage_type,
+            "search_queries": [str(query).strip() for query in queries[:3] if str(query).strip()],
+            "reason": reason or fallback["reason"],
+        })
+    except (Exception, json.JSONDecodeError) as error:
+        app.logger.warning("Storage recommendation failed: %s", error)
+        return jsonify({"success": True, "source": "rule_based", **fallback})
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
