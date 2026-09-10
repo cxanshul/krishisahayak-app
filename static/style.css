@@ -981,6 +981,13 @@ body {
 .profile-card { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; background: var(--card-surface); border: 1px solid var(--border-ledger); padding: 24px; box-shadow: 0 18px 45px rgba(43, 36, 24, 0.25); }
 .profile-card label { display: block; color: var(--text-muted); font-size: 12px; font-weight: 700; margin: 10px 0 5px; }
 .profile-card input { width: 100%; border: 1px solid #CBD5BE; padding: 10px 12px; font: 14px var(--font-sans); }
+.storage-finder-map { height: 500px; width: 100%; margin: 12px 0 16px; border: 1px solid var(--border-ledger); z-index: 1; }
+.storage-finder-map:empty { display: none; }
+.storage-recommendation { display: grid; gap: 4px; margin: 10px 0 12px; padding: 12px 14px; background: #eef6e9; border-left: 4px solid var(--leaf-green); color: var(--text-loam); font-size: 12px; line-height: 1.45; }
+.storage-recommendation span { color: var(--text-muted); }
+.storage-recommendation.hidden { display: none; }
+.farm-location-marker { background: transparent; border: 0; }
+.farm-location-marker span { display: block; width: 18px; height: 18px; border: 3px solid #fff; border-radius: 50%; background: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .25); }
 .btn-close-profile { background: transparent; border: 0; color: var(--text-muted); font-size: 26px; cursor: pointer; line-height: 1; }
 .profile-actions, .profile-danger { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
 .profile-danger { justify-content: space-between; border-top: 1px solid var(--border-ledger); padding-top: 16px; }

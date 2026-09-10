@@ -8,9 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    {% if google_maps_api_key %}
-    <script async src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places"></script>
-    {% endif %}
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 </head>
 <body>
 
@@ -498,6 +496,8 @@
                 <button class="auth-submit" type="button" id="storage-finder-locate-btn" onclick="findNearestStorage()">📍 Use my location & search</button>
             </div>
             <div id="storage-finder-status" style="font-size:13px; color:var(--text-muted); margin-bottom:8px;"></div>
+            <div id="storage-finder-recommendation" class="storage-recommendation hidden"></div>
+            <div id="storage-finder-map" class="storage-finder-map" aria-label="Nearby storage facility map"></div>
             <div id="storage-finder-results" class="batch-cards-grid"></div>
         </div>
     </div>
@@ -567,5 +567,7 @@
     </div>
 
     <script src="/static/app.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </body>
 </html>

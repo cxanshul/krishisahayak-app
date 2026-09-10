@@ -748,6 +748,26 @@ Use facility terms that a local Google Maps search can find, such as cold storag
         app.logger.warning("Storage recommendation failed: %s", error)
         return jsonify({"success": True, "source": "rule_based", **fallback})
 
+@app.route("/api/storage/rpc-search", methods=["GET"])
+@require_auth
+def rpc_search_storage_facilities():
+    latitude = safe_float(request.args.get("latitude"), None)
+    longitude = safe_float(request.args.get("longitude"), None)
+    if latitude is None or longitude is None:
+        return jsonify({"success": False, "error": "latitude and longitude are required."}), 400
+    if not supabase:
+        return jsonify({"success": False, "error": "Supabase is not configured on the server."}), 503
+    try:
+        result = supabase.rpc("find_nearest_facilities", {
+            "user_lat": latitude,
+            "user_lng": longitude,
+            "max_distance_meters": 50000,
+        }).execute()
+        return jsonify({"success": True, "facilities": result.data or [], "source": "supabase_rpc"})
+    except Exception as error:
+        app.logger.warning("Supabase facility RPC failed: %s", error)
+        return jsonify({"success": False, "error": "Storage facilities are not configured yet. Apply the Supabase schema first."}), 502
+
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
 def list_produce():
