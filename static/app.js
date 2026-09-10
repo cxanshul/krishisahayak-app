@@ -1251,6 +1251,53 @@ function loadGooglePlaces() {
 }
 
 async function searchGoogleStorage(userLat, userLng, queries) {
+    if (!window.GOOGLE_MAPS_API_KEY) return [];
+    const places = new Map();
+    for (const query of queries.slice(0, 3)) {
+        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': window.GOOGLE_MAPS_API_KEY,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.internationalPhoneNumber'
+            },
+            body: JSON.stringify({
+                textQuery: query,
+                languageCode: 'en',
+                locationBias: {
+                    circle: {
+                        center: { latitude: userLat, longitude: userLng },
+                        radius: 50000
+                    }
+                },
+                maxResultCount: 20
+            })
+        });
+        if (!response.ok) {
+            const message = await response.text();
+            throw new Error(`Google Places error (${response.status}). Check Places API, billing, and key restrictions.`);
+        }
+        const data = await response.json();
+        (data.places || []).forEach(place => {
+            if (place.id && place.location) places.set(place.id, place);
+        });
+    }
+
+    if (places.size > 0) {
+        return Array.from(places.values()).map(place => ({
+            name: place.displayName?.text || 'Storage facility',
+            address: place.formattedAddress || '',
+            facility_type: 'Google Places facility',
+            available_capacity: 'Contact facility',
+            contact_number: place.internationalPhoneNumber || '',
+            latitude: place.location.latitude,
+            longitude: place.location.longitude,
+            distance_meters: haversineKm(userLat, userLng, place.location.latitude, place.location.longitude) * 1000,
+            place_id: place.id
+        }));
+    }
+
+    // Keep legacy Places as a compatibility fallback for projects that enabled it.
     if (!await loadGooglePlaces()) return [];
     const location = new google.maps.LatLng(userLat, userLng);
     const service = new google.maps.places.PlacesService(document.createElement('div'));
@@ -1394,16 +1441,24 @@ async function findNearestStorage() {
 
         try {
             statusEl.innerText = 'Searching Google Maps for nearby storage facilities...';
-            let facilities = await searchGoogleStorage(
-                userLat,
-                userLng,
-                storagePlan.search_queries || ['cold storage', 'agricultural warehouse']
-            );
+            let googleSearchError = null;
+            let facilities = [];
+            try {
+                facilities = await searchGoogleStorage(
+                    userLat,
+                    userLng,
+                    storagePlan.search_queries || ['cold storage', 'agricultural warehouse']
+                );
+            } catch (error) {
+                googleSearchError = error;
+            }
             let radiusLabel = 200;
             let usedFallback = false;
 
             if (facilities.length === 0) {
-                statusEl.innerText = 'Google Maps found no results; checking registered facilities...';
+                statusEl.innerText = googleSearchError
+                    ? `${googleSearchError.message} Checking registered facilities...`
+                    : 'Google Maps found no results; checking registered facilities...';
                 const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
                 const data = await readJsonResponse(response, 'Storage facility search failed.');
                 facilities = data.facilities || [];
