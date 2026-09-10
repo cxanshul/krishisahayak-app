@@ -704,58 +704,71 @@ def search_storage_facilities():
     ):
         return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
 
-    try:
-        for radius_km in (10, 25, 50, 100):
-            query = f"""
+    overpass_endpoints = list(dict.fromkeys([
+        OVERPASS_API_URL,
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter",
+    ]))
+    last_error = None
+
+    for radius_km in (10, 25, 50, 100):
+        query = f"""
 [out:json][timeout:25];
 (
-  nwr["name"~"cold|storage|warehouse|godown|grain|agricultur|silo|depot",i](around:{radius_km * 1000},{latitude},{longitude});
-  nwr["building"~"warehouse|industrial",i](around:{radius_km * 1000},{latitude},{longitude});
+  nwr["name"~"cold|storage|warehouse|godown|grain|agricultur|silo|depot|mandi|market",i](around:{radius_km * 1000},{latitude},{longitude});
+  nwr["amenity"~"warehouse|marketplace|storage",i](around:{radius_km * 1000},{latitude},{longitude});
+  nwr["building"~"warehouse|industrial|silo",i](around:{radius_km * 1000},{latitude},{longitude});
+  nwr["man_made"="silo"](around:{radius_km * 1000},{latitude},{longitude});
   nwr["shop"~"agrarian|farm",i](around:{radius_km * 1000},{latitude},{longitude});
 );
 out center tags;
 """
-            response = requests.post(
-                OVERPASS_API_URL,
-                data=query,
-                headers={"User-Agent": "HackBhoomi/1.0 (agriculture storage finder)"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            places = []
-            seen = set()
-            for element in response.json().get("elements", []):
-                tags = element.get("tags", {})
-                point = element.get("center", element)
-                place_lat = safe_float(point.get("lat"), None)
-                place_lon = safe_float(point.get("lon"), None)
-                if place_lat is None or place_lon is None:
-                    continue
-                place_id = f"osm-{element.get('type')}-{element.get('id')}"
-                if place_id in seen:
-                    continue
-                seen.add(place_id)
-                name = tags.get("name") or tags.get("official_name") or "Unnamed storage facility"
-                category = tags.get("amenity") or tags.get("building") or tags.get("shop") or "Storage facility"
-                address = tags.get("addr:full") or ", ".join(
-                    value for value in [tags.get("addr:housenumber"), tags.get("addr:street"), tags.get("addr:city"), tags.get("addr:state")] if value
-                ) or tags.get("description") or "Location details not listed"
-                places.append({
-                    "place_id": place_id,
-                    "name": name,
-                    "category": category.replace("_", " ").title(),
-                    "address": address,
-                    "latitude": place_lat,
-                    "longitude": place_lon,
-                    "distance_km": haversine_distance_km(latitude, longitude, place_lat, place_lon),
-                })
-            if places:
-                places.sort(key=lambda place: place["distance_km"])
-                return jsonify({"success": True, "facilities": places, "radius_km": radius_km, "source": "OpenStreetMap Overpass"})
-        return jsonify({"success": True, "facilities": [], "radius_km": 100, "source": "OpenStreetMap Overpass"})
-    except (requests.RequestException, ValueError, TypeError) as error:
-        app.logger.warning("Overpass storage search failed: %s", error)
-        return jsonify({"success": False, "error": "OpenStreetMap storage search is temporarily unavailable."}), 502
+        for endpoint in overpass_endpoints:
+            try:
+                response = requests.post(
+                    endpoint,
+                    data=query,
+                    headers={"User-Agent": "HackBhoomi/1.0 (agriculture storage finder)"},
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                places = []
+                seen = set()
+                for element in response.json().get("elements", []):
+                    tags = element.get("tags", {})
+                    point = element.get("center", element)
+                    place_lat = safe_float(point.get("lat"), None)
+                    place_lon = safe_float(point.get("lon"), None)
+                    if place_lat is None or place_lon is None:
+                        continue
+                    place_id = f"osm-{element.get('type')}-{element.get('id')}"
+                    if place_id in seen:
+                        continue
+                    seen.add(place_id)
+                    name = tags.get("name") or tags.get("official_name") or "Unnamed storage facility"
+                    category = tags.get("amenity") or tags.get("building") or tags.get("shop") or tags.get("man_made") or "Storage facility"
+                    address = tags.get("addr:full") or ", ".join(
+                        value for value in [tags.get("addr:housenumber"), tags.get("addr:street"), tags.get("addr:village"), tags.get("addr:town"), tags.get("addr:city"), tags.get("addr:district"), tags.get("addr:state")] if value
+                    ) or tags.get("description") or "Location details not listed"
+                    places.append({
+                        "place_id": place_id,
+                        "name": name,
+                        "category": category.replace("_", " ").title(),
+                        "address": address,
+                        "latitude": place_lat,
+                        "longitude": place_lon,
+                        "distance_km": haversine_distance_km(latitude, longitude, place_lat, place_lon),
+                    })
+                if places:
+                    places.sort(key=lambda place: place["distance_km"])
+                    return jsonify({"success": True, "facilities": places[:50], "radius_km": radius_km, "source": endpoint})
+            except (requests.RequestException, ValueError, TypeError) as error:
+                last_error = error
+                app.logger.warning("Overpass storage search failed at %s: %s", endpoint, error)
+
+    if last_error:
+        return jsonify({"success": False, "error": "OpenStreetMap storage search is temporarily unavailable. Please try again."}), 502
+    return jsonify({"success": True, "facilities": [], "radius_km": 100, "source": "OpenStreetMap Overpass"})
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
