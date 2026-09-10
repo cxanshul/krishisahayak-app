@@ -131,6 +131,69 @@ async function loadProfile() {
     if (displayName && farmerProfile?.full_name) displayName.innerText = farmerProfile.full_name;
 }
 
+function openProfile() {
+    const modal = document.getElementById("profile-modal");
+    if (!modal) return;
+
+    document.getElementById("profile-name").value = farmerProfile?.full_name || "";
+    document.getElementById("profile-latitude").value = farmerProfile?.latitude ?? "";
+    document.getElementById("profile-longitude").value = farmerProfile?.longitude ?? "";
+    document.getElementById("profile-location-name").value = farmerProfile?.location_name || "";
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+}
+
+function closeProfile() {
+    const modal = document.getElementById("profile-modal");
+    if (modal) modal.classList.add("hidden");
+    document.body.style.overflow = "";
+}
+
+function useProfileLocation() {
+    if (!navigator.geolocation) {
+        showToast("Location is not supported by this browser.", "error");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        position => {
+            document.getElementById("profile-latitude").value = position.coords.latitude.toFixed(6);
+            document.getElementById("profile-longitude").value = position.coords.longitude.toFixed(6);
+            showToast("Farm location detected.", "success");
+        },
+        () => showToast("Could not access your location. Please enter coordinates manually.", "error"),
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
+async function saveProfile(event) {
+    event.preventDefault();
+    const payload = {
+        full_name: document.getElementById("profile-name").value.trim(),
+        latitude: document.getElementById("profile-latitude").value,
+        longitude: document.getElementById("profile-longitude").value,
+        location_name: document.getElementById("profile-location-name").value.trim()
+    };
+
+    try {
+        const response = await fetch("/api/profile", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "Profile could not be saved.");
+
+        farmerProfile = data.profile;
+        const displayName = document.getElementById("display-farmer");
+        if (displayName) displayName.innerText = farmerProfile.full_name || "Signed in";
+        closeProfile();
+        showToast("Profile saved successfully.", "success");
+    } catch (error) {
+        showToast(error.message, "error");
+    }
+}
+
 async function deleteAllProduce() {
     const confirmed = window.confirm("Delete all your registered crop data from Supabase? This cannot be undone.");
     if (!confirmed) return;
