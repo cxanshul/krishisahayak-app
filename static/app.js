@@ -1275,7 +1275,12 @@ async function searchGoogleStorage(userLat, userLng, queries) {
         });
         if (!response.ok) {
             const message = await response.text();
-            throw new Error(`Google Places error (${response.status}). Check Places API, billing, and key restrictions.`);
+            let reason = `status ${response.status}`;
+            try {
+                const parsed = JSON.parse(message);
+                reason = parsed.error?.message || parsed.error?.status || reason;
+            } catch (_) { /* body wasn't JSON, keep the raw status */ }
+            throw new Error(`Google Places error: ${reason}`);
         }
         const data = await response.json();
         (data.places || []).forEach(place => {
