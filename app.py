@@ -49,6 +49,11 @@ SECONDARY_AI_MODEL = env_value("SECONDARY_AI_MODEL", "gpt-4o-mini")
 SUPABASE_URL = env_value("SUPABASE_URL")
 SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in env_value("ADMIN_EMAILS", "").split(",")
+    if email.strip()
+}
 
 ACCUWEATHER_API_KEY = env_value("ACCUWEATHER_API_KEY")
 ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
@@ -267,6 +272,24 @@ def require_auth(view):
         return view(*args, **kwargs)
     return wrapped_view
 
+def is_admin(user=None):
+    user = user or current_user()
+    return bool(user and user.get("email", "").lower() in ADMIN_EMAILS)
+
+def require_admin(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        if not current_user():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required."}), 401
+            return redirect(url_for("auth_page"))
+        if not is_admin():
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Admin access is required."}), 403
+            return redirect(url_for("home"))
+        return view(*args, **kwargs)
+    return wrapped_view
+
 def user_batches(user_id):
     if supabase:
         try:
@@ -355,7 +378,89 @@ def logout():
 @app.route("/")
 @require_auth
 def home():
-    return render_template("index.html")
+    return render_template("index.html", is_admin=is_admin())
+
+@app.route("/admin")
+@require_admin
+def admin_dashboard():
+    return render_template("admin.html")
+
+@app.route("/api/admin/overview", methods=["GET"])
+@require_admin
+def admin_overview():
+    if not supabase:
+        return jsonify({"success": False, "error": "Supabase is not configured on the server."}), 503
+    try:
+        profiles_result = supabase.table("farmer_profiles").select("*").execute()
+        batches_result = supabase.table("produce_batches").select("*").order("created_at", desc=True).execute()
+        profiles = profiles_result.data or []
+        batches = batches_result.data or []
+        profile_map = {profile.get("farmer_id"): profile for profile in profiles}
+
+        farmer_ids = {batch.get("farmer_id") for batch in batches if batch.get("farmer_id")}
+        farmer_ids.update(profile_map.keys())
+        crop_mix = {}
+        state_mix = {}
+        risk_mix = {"Low": 0, "Medium": 0, "High": 0, "Not applicable": 0}
+        totals = {"active_quantity_kg": 0, "total_quantity_kg": 0, "revenue": 0, "profit": 0, "production_cost": 0}
+        recent_batches = []
+
+        for batch in batches:
+            crop_name = batch.get("crop_name") or "Unknown crop"
+            crop_mix[crop_name] = crop_mix.get(crop_name, 0) + 1
+            risk = batch.get("spoilage_risk") or "Not applicable"
+            risk_mix[risk] = risk_mix.get(risk, 0) + 1
+            quantity = safe_float(batch.get("quantity_kg"))
+            totals["total_quantity_kg"] += quantity
+            totals["production_cost"] += safe_float(batch.get("production_cost"))
+            if batch.get("status") == "active":
+                totals["active_quantity_kg"] += quantity
+            totals["revenue"] += safe_float(batch.get("total_revenue"))
+            totals["profit"] += safe_float(batch.get("net_profit_loss"))
+
+            profile = profile_map.get(batch.get("farmer_id"), {})
+            location = profile.get("location_name") or "Location not added"
+            state = location.split(",")[-1].strip() if "," in location else location
+            if state and state != "Location not added":
+                state_mix[state] = state_mix.get(state, 0) + 1
+            if len(recent_batches) < 12:
+                recent_batches.append({
+                    "id": batch.get("id"), "crop_name": crop_name, "status": batch.get("status") or "active",
+                    "crop_status": batch.get("crop_status") or "harvested", "quantity_kg": quantity,
+                    "spoilage_risk": risk, "created_at": batch.get("created_at"),
+                    "farmer_name": profile.get("full_name") or "Unnamed farmer", "location": location,
+                })
+
+        farmer_rows = []
+        for farmer_id in sorted(farmer_ids):
+            profile = profile_map.get(farmer_id, {})
+            farmer_batches = [batch for batch in batches if batch.get("farmer_id") == farmer_id]
+            farmer_rows.append({
+                "farmer_id": farmer_id, "full_name": profile.get("full_name") or "Unnamed farmer",
+                "location": profile.get("location_name") or "Location not added", "crop_count": len(farmer_batches),
+                "active_quantity_kg": sum(safe_float(batch.get("quantity_kg")) for batch in farmer_batches if batch.get("status") == "active"),
+                "revenue": sum(safe_float(batch.get("total_revenue")) for batch in farmer_batches),
+                "profit": sum(safe_float(batch.get("net_profit_loss")) for batch in farmer_batches),
+                "last_activity": max((batch.get("created_at") for batch in farmer_batches if batch.get("created_at")), default=None),
+            })
+
+        return jsonify({
+            "success": True, "refreshed_at": datetime.utcnow().isoformat() + "Z",
+            "summary": {
+                "farmer_count": len(farmer_ids), "profile_count": len(profiles), "batch_count": len(batches),
+                "active_batches": sum(1 for batch in batches if batch.get("status") == "active"),
+                "sold_batches": sum(1 for batch in batches if batch.get("status") == "sold"),
+                "high_risk_batches": risk_mix.get("High", 0), **totals,
+            },
+            "crop_mix": [{"label": key, "value": value} for key, value in sorted(crop_mix.items(), key=lambda item: item[1], reverse=True)],
+            "state_mix": [{"label": key, "value": value} for key, value in sorted(state_mix.items(), key=lambda item: item[1], reverse=True)],
+            "risk_mix": [{"label": key, "value": value} for key, value in risk_mix.items() if value],
+            "farmers": sorted(farmer_rows, key=lambda row: row["crop_count"], reverse=True),
+            "recent_batches": recent_batches,
+        })
+    except Exception as error:
+        app.logger.exception("Could not load admin overview")
+        return jsonify({"success": False, "error": f"Could not load admin data: {error}"}), 502
 
 @app.route("/api/profile", methods=["GET", "PUT", "DELETE"])
 @require_auth

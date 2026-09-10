@@ -47,6 +47,11 @@
             <button class="nav-item" onclick="switchTab('ledger-history')">
                 <span class="icon">📜</span> <span data-en="History & Next Crop" data-hi="उपज इतिहास व अगली फसल">History & Next Crop</span>
             </button>
+            {% if is_admin %}
+            <a class="nav-item admin-link" href="/admin">
+                <span class="icon">▦</span> <span>Admin analysis</span>
+            </a>
+            {% endif %}
         </nav>
 
         <div class="sidebar-footer">

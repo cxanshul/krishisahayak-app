@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HackBhoomi - Admin analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,0..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-page">
+    <div id="toast-container" class="toast-container"></div>
+    <aside class="sidebar admin-sidebar">
+        <div class="brand">
+            <h1 class="logo">HACKBHOOMI</h1>
+            <p class="tagline">Operations intelligence</p>
+        </div>
+        <div class="admin-rail-note">
+            <span class="admin-rail-kicker">ADMIN VIEW</span>
+            <strong>One field ledger,<br>one clear picture.</strong>
+            <p>Track adoption, crop activity, inventory risk, and farm economics from one place.</p>
+        </div>
+        <nav class="admin-nav">
+            <a class="nav-item active" href="/admin"><span class="icon">▦</span> Overview</a>
+            <a class="nav-item" href="/"><span class="icon">←</span> Farmer app</a>
+        </nav>
+        <div class="sidebar-footer">
+            <button class="admin-refresh-link" type="button" onclick="loadAdminOverview()">↻ Refresh data</button>
+            <button class="admin-logout" type="button" onclick="logoutAdmin()">Sign out</button>
+        </div>
+    </aside>
+
+    <main class="main-content admin-main">
+        <header class="admin-header">
+            <div>
+                <p class="eyebrow">FIELD OPERATIONS / LIVE VIEW</p>
+                <h2 class="page-title">Farm network analysis</h2>
+                <p class="subtitle">A high-level read on the farmers, crops, inventory, and economics flowing through HackBhoomi.</p>
+            </div>
+            <div class="admin-header-meta">
+                <span class="admin-live-dot"><i></i> Protected admin view</span>
+                <span id="admin-refreshed-at">Loading snapshot...</span>
+            </div>
+        </header>
+
+        <section id="admin-error" class="admin-error hidden" role="alert"></section>
+
+        <section class="admin-kpi-grid" aria-label="Network summary">
+            <article class="admin-kpi kpi-forest"><span>Registered farmers</span><strong id="kpi-farmers">—</strong><small id="kpi-profiles">profiles with farm records</small></article>
+            <article class="admin-kpi kpi-gold"><span>Crop batches</span><strong id="kpi-batches">—</strong><small><b id="kpi-active">—</b> active · <b id="kpi-sold">—</b> sold</small></article>
+            <article class="admin-kpi kpi-sage"><span>Produce in ledger</span><strong id="kpi-quantity">—</strong><small>kilograms recorded across batches</small></article>
+            <article class="admin-kpi kpi-ink"><span>High risk batches</span><strong id="kpi-risk">—</strong><small>need attention in storage or handling</small></article>
+        </section>
+
+        <section class="admin-insight-strip">
+            <div><span class="admin-strip-label">Recorded revenue</span><strong id="kpi-revenue">₹ —</strong></div>
+            <div><span class="admin-strip-label">Recorded net profit</span><strong id="kpi-profit">₹ —</strong></div>
+            <div><span class="admin-strip-label">Production cost</span><strong id="kpi-cost">₹ —</strong></div>
+            <div><span class="admin-strip-label">Profit margin on revenue</span><strong id="kpi-margin">—</strong></div>
+        </section>
+
+        <section class="admin-analysis-grid">
+            <article class="analysis-panel crop-analysis-panel">
+                <div class="analysis-panel-head"><div><span class="eyebrow">WHAT IS MOVING</span><h3>Crop mix</h3></div><span class="panel-note">by batch count</span></div>
+                <div id="crop-mix-chart" class="bar-chart"></div>
+            </article>
+            <article class="analysis-panel">
+                <div class="analysis-panel-head"><div><span class="eyebrow">WHERE IT IS HAPPENING</span><h3>Farm locations</h3></div><span class="panel-note">by crop batch</span></div>
+                <div id="state-mix-chart" class="bar-chart"></div>
+            </article>
+            <article class="analysis-panel risk-analysis-panel">
+                <div class="analysis-panel-head"><div><span class="eyebrow">WHAT NEEDS CARE</span><h3>Quality risk</h3></div><span class="panel-note">current flags</span></div>
+                <div id="risk-mix-chart" class="risk-chart"></div>
+            </article>
+        </section>
+
+        <section class="admin-content-grid">
+            <article class="analysis-panel farmer-panel">
+                <div class="analysis-panel-head table-head"><div><span class="eyebrow">FARMER NETWORK</span><h3>Farmer performance</h3></div><input id="farmer-filter" class="admin-filter" type="search" placeholder="Search farmer or location" oninput="filterFarmers()"></div>
+                <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Farmer</th><th>Location</th><th>Batches</th><th>Active kg</th><th>Revenue</th><th>Profit</th></tr></thead><tbody id="farmers-table"></tbody></table></div>
+            </article>
+            <article class="analysis-panel activity-panel">
+                <div class="analysis-panel-head"><div><span class="eyebrow">LATEST SIGNALS</span><h3>Recent crop activity</h3></div></div>
+                <div id="recent-activity" class="activity-list"></div>
+            </article>
+        </section>
+    </main>
+    <script src="/static/admin.js"></script>
+</body>
+</html>
