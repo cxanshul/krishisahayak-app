@@ -1220,7 +1220,15 @@ function haversineKm(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function findNearestStorage() {
+function runTextSearch(service, query, location, radius) {
+    return new Promise(resolve => {
+        service.textSearch({ query, location, radius }, (results, status) => {
+            resolve({ status, results: results || [] });
+        });
+    });
+}
+
+async function findNearestStorage() {
     const statusEl = document.getElementById('storage-finder-status');
     const resultsEl = document.getElementById('storage-finder-results');
     const btn = document.getElementById('storage-finder-locate-btn');
@@ -1238,52 +1246,72 @@ function findNearestStorage() {
     statusEl.innerText = 'Getting your location...';
     resultsEl.innerHTML = '';
 
-    navigator.geolocation.getCurrentPosition(position => {
+    navigator.geolocation.getCurrentPosition(async position => {
         const userLat = position.coords.latitude;
         const userLng = position.coords.longitude;
-        statusEl.innerText = 'Searching nearby storage facilities...';
-
+        const location = new google.maps.LatLng(userLat, userLng);
         const mapDiv = document.createElement('div');
         const service = new google.maps.places.PlacesService(mapDiv);
-        const request = {
-            location: new google.maps.LatLng(userLat, userLng),
-            radius: 25000,
-            keyword: 'cold storage warehouse godown agricultural storage'
-        };
 
-        service.nearbySearch(request, (results, status) => {
-            btn.disabled = false;
-            if (status !== google.maps.places.PlacesServiceStatus.OK || !results || results.length === 0) {
-                statusEl.innerText = 'No storage facilities found nearby. Try again later or widen your search area.';
-                return;
+        const queries = ['cold storage', 'warehouse', 'godown', 'agricultural storage facility', 'grain storage'];
+        const radii = [25000, 60000]; // widen automatically if nothing found nearby
+
+        let merged = new Map();
+        let sawRealError = null;
+
+        for (const radius of radii) {
+            statusEl.innerText = `Searching within ${radius / 1000} km...`;
+            const responses = await Promise.all(queries.map(q => runTextSearch(service, q, location, radius)));
+
+            responses.forEach(({ status, results }) => {
+                if (status === google.maps.places.PlacesServiceStatus.OK) {
+                    results.forEach(place => {
+                        if (place.place_id && place.geometry?.location) merged.set(place.place_id, place);
+                    });
+                } else if (status !== google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                    sawRealError = status; // REQUEST_DENIED, INVALID_REQUEST, OVER_QUERY_LIMIT, etc.
+                }
+            });
+
+            if (merged.size > 0) break; // found enough at this radius, no need to widen further
+        }
+
+        btn.disabled = false;
+
+        if (merged.size === 0) {
+            if (sawRealError) {
+                statusEl.innerText = `Search failed (${sawRealError}). Check that "Places API" is enabled for this key in Google Cloud Console and that billing is active.`;
+            } else {
+                statusEl.innerText = 'No storage facilities are listed on Google Maps within 60 km of your location.';
             }
+            return;
+        }
 
-            const withDistance = results.map(place => ({
-                place,
-                distanceKm: haversineKm(userLat, userLng, place.geometry.location.lat(), place.geometry.location.lng())
-            })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 8);
+        const withDistance = Array.from(merged.values()).map(place => ({
+            place,
+            distanceKm: haversineKm(userLat, userLng, place.geometry.location.lat(), place.geometry.location.lng())
+        })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 8);
 
-            statusEl.innerText = `Found ${withDistance.length} facility(s) near you, sorted by distance:`;
-            resultsEl.innerHTML = withDistance.map(({ place, distanceKm }) => {
-                const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${place.geometry.location.lat()},${place.geometry.location.lng()}&destination_place_id=${place.place_id}`;
-                return `
-                    <div class="batch-card">
-                        <div>
-                            <span class="crop-title">${place.name}</span>
-                            <small style="display:block; color: var(--text-muted);">${place.vicinity || ''}</small>
-                        </div>
-                        <div>
-                            <span class="detail-lbl">Distance</span>
-                            <span class="detail-val">${distanceKm.toFixed(1)} km</span>
-                            ${place.rating ? `<small style="color: var(--text-muted);">Rating: ${place.rating} ⭐ (${place.user_ratings_total || 0})</small>` : ''}
-                        </div>
-                        <div>
-                            <a class="btn-secondary" style="display:inline-block; text-decoration:none; text-align:center;" href="${directionsUrl}" target="_blank" rel="noopener">Get Directions</a>
-                        </div>
+        statusEl.innerText = `Found ${withDistance.length} facility(s) near you, sorted by distance:`;
+        resultsEl.innerHTML = withDistance.map(({ place, distanceKm }) => {
+            const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${place.geometry.location.lat()},${place.geometry.location.lng()}&destination_place_id=${place.place_id}`;
+            return `
+                <div class="batch-card">
+                    <div>
+                        <span class="crop-title">${place.name}</span>
+                        <small style="display:block; color: var(--text-muted);">${place.formatted_address || place.vicinity || ''}</small>
                     </div>
-                `;
-            }).join('');
-        });
+                    <div>
+                        <span class="detail-lbl">Distance</span>
+                        <span class="detail-val">${distanceKm.toFixed(1)} km</span>
+                        ${place.rating ? `<small style="color: var(--text-muted);">Rating: ${place.rating} ⭐ (${place.user_ratings_total || 0})</small>` : ''}
+                    </div>
+                    <div>
+                        <a class="btn-secondary" style="display:inline-block; text-decoration:none; text-align:center;" href="${directionsUrl}" target="_blank" rel="noopener">Get Directions</a>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }, error => {
         btn.disabled = false;
         statusEl.innerText = 'Could not get your location. Please allow location access and try again.';
