@@ -8,7 +8,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCqFKkOevq5XKJ56cfi8GrBtNqQFk16O3M&libraries=places"></script>
+    {% if google_maps_api_key %}
+    <script async src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&libraries=places"></script>
+    {% endif %}
 </head>
 <body>
 
