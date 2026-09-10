@@ -1366,7 +1366,7 @@ async function findNearestStorage() {
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.error || 'OpenStreetMap search failed.');
             if (!renderStorageResults(data.facilities || [], userLat, userLng, data.radius_km)) {
-                statusEl.innerText = 'No storage facility found nearby within 100 km.';
+                statusEl.innerText = data.message || `No storage facility found nearby within ${data.radius_km || 50} km.`;
             }
         } catch (error) {
             statusEl.innerText = error.message;
