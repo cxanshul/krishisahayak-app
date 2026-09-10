@@ -1293,6 +1293,17 @@ async function searchStorageFallback(userLat, userLng) {
     return data.places || [];
 }
 
+async function readJsonResponse(response, fallbackMessage) {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        const body = await response.text();
+        throw new Error(response.ok ? fallbackMessage : `Server error (${response.status}). Please try again.`);
+    }
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || fallbackMessage);
+    return data;
+}
+
 async function recommendStorageForBatch(batch) {
     const response = await fetch('/api/storage/recommend', {
         method: 'POST',
@@ -1303,9 +1314,7 @@ async function recommendStorageForBatch(batch) {
             quantity_kg: batch?.quantity_kg || 0
         })
     });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error || 'Storage recommendation failed.');
-    return data;
+    return readJsonResponse(response, 'Storage recommendation failed.');
 }
 
 async function findNearestStorage() {
@@ -1330,15 +1339,22 @@ async function findNearestStorage() {
             btn.disabled = false;
             return;
         }
+        let storagePlan;
         try {
             statusEl.innerText = 'Gemini is identifying the right storage facility...';
-            const storagePlan = await recommendStorageForBatch(batch);
-            renderStorageRecommendation(storagePlan);
-            statusEl.innerText = 'Searching Supabase for nearby storage facilities...';
+            storagePlan = await recommendStorageForBatch(batch);
+        } catch (error) {
+            storagePlan = {
+                storage_type: 'Agricultural storage facility',
+                reason: 'Gemini is temporarily unavailable; showing nearby registered facilities.'
+            };
+        }
+        renderStorageRecommendation(storagePlan);
 
+        try {
+            statusEl.innerText = 'Searching Supabase for nearby storage facilities...';
             const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || 'Storage facility search failed.');
+            const data = await readJsonResponse(response, 'Storage facility search failed.');
             if (!renderStorageResults(data.facilities || [], userLat, userLng)) {
                 statusEl.innerText = 'No storage facilities were found within 50 km.';
             }

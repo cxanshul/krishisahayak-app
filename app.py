@@ -88,6 +88,18 @@ gemini_client = (
     else None
 )
 
+storage_gemini_client = (
+    genai.Client(
+        api_key=GEMINI_KEY,
+        http_options=types.HttpOptions(
+            timeout=12000,
+            retry_options=types.HttpRetryOptions(attempts=1)
+        )
+    )
+    if GEMINI_KEY
+    else None
+)
+
 def secondary_ai_response(contents, json_mode=False, max_tokens=512):
     """Call an optional OpenAI-compatible provider after the primary AI fails."""
     if not SECONDARY_AI_KEY:
@@ -699,7 +711,7 @@ def recommend_storage():
     variety = str(data.get("variety", "Not specified")).strip()
     quantity_kg = safe_float(data.get("quantity_kg"), 0)
     fallback = fallback_storage_plan(crop_name)
-    if not gemini_client and not SECONDARY_AI_KEY:
+    if not storage_gemini_client and not SECONDARY_AI_KEY:
         return jsonify({"success": True, "source": "rule_based", **fallback})
 
     prompt = f"""
@@ -718,8 +730,8 @@ Use facility terms that a local Google Maps search can find, such as cold storag
 """
     try:
         ai_text = None
-        if gemini_client:
-            response = gemini_client.models.generate_content(
+        if storage_gemini_client:
+            response = storage_gemini_client.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=[prompt],
                 config=types.GenerateContentConfig(
@@ -744,7 +756,7 @@ Use facility terms that a local Google Maps search can find, such as cold storag
             "search_queries": [str(query).strip() for query in queries[:3] if str(query).strip()],
             "reason": reason or fallback["reason"],
         })
-    except (Exception, json.JSONDecodeError) as error:
+    except Exception as error:
         app.logger.warning("Storage recommendation failed: %s", error)
         return jsonify({"success": True, "source": "rule_based", **fallback})
 
