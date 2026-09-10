@@ -1235,7 +1235,7 @@ function runTextSearch(service, query, location, radius) {
     });
 }
 
-function renderStorageResults(facilities, userLat, userLng) {
+function renderStorageResults(facilities, userLat, userLng, radiusKm = 200) {
     const resultsEl = document.getElementById('storage-finder-results');
     const mapEl = document.getElementById('storage-finder-map');
     const recommendation = document.getElementById('storage-finder-recommendation');
@@ -1256,7 +1256,7 @@ function renderStorageResults(facilities, userLat, userLng) {
     })).sort((a, b) => a.distanceKm - b.distanceKm);
 
     if (withDistance.length === 0) return false;
-    document.getElementById('storage-finder-status').innerText = `Found ${withDistance.length} storage facilities within 50 km, sorted by distance:`;
+    document.getElementById('storage-finder-status').innerText = `Found ${withDistance.length} storage facilities within ${radiusKm} km, sorted by distance:`;
     resultsEl.innerHTML = withDistance.map(({ facility, distanceKm }) => {
         const lat = Number(facility.latitude);
         const lng = Number(facility.longitude);
@@ -1355,8 +1355,8 @@ async function findNearestStorage() {
             statusEl.innerText = 'Searching Supabase for nearby storage facilities...';
             const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
             const data = await readJsonResponse(response, 'Storage facility search failed.');
-            if (!renderStorageResults(data.facilities || [], userLat, userLng)) {
-                statusEl.innerText = 'No storage facilities were found within 50 km.';
+            if (!renderStorageResults(data.facilities || [], userLat, userLng, data.radius_km)) {
+                statusEl.innerText = `No storage facilities were found within ${data.radius_km || 200} km.`;
             }
         } catch (error) {
             statusEl.innerText = error.message;

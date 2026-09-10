@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS storage_facilities_location_idx ON storage_facilities
 CREATE OR REPLACE FUNCTION find_nearest_facilities(
     user_lat NUMERIC,
     user_lng NUMERIC,
-    max_distance_meters NUMERIC DEFAULT 50000
+    max_distance_meters NUMERIC DEFAULT 200000
 )
 RETURNS TABLE (
     id UUID,

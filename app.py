@@ -50,6 +50,7 @@ SUPABASE_URL = env_value("SUPABASE_URL")
 SUPABASE_KEY = env_value("SUPABASE_KEY")
 GEMINI_MODEL = env_value("GEMINI_MODEL", "gemini-3.6-flash")
 GOOGLE_MAPS_API_KEY = env_value("GOOGLE_MAPS_API_KEY")
+STORAGE_SEARCH_RADIUS_METERS = max(50000, min(int(env_value("STORAGE_SEARCH_RADIUS_METERS", "200000")), 1000000))
 ADMIN_EMAILS = {
     email.strip().lower()
     for email in env_value("ADMIN_EMAILS", "").split(",")
@@ -773,9 +774,14 @@ def rpc_search_storage_facilities():
         result = supabase.rpc("find_nearest_facilities", {
             "user_lat": latitude,
             "user_lng": longitude,
-            "max_distance_meters": 50000,
+            "max_distance_meters": STORAGE_SEARCH_RADIUS_METERS,
         }).execute()
-        return jsonify({"success": True, "facilities": result.data or [], "source": "supabase_rpc"})
+        return jsonify({
+            "success": True,
+            "facilities": result.data or [],
+            "radius_km": STORAGE_SEARCH_RADIUS_METERS // 1000,
+            "source": "supabase_rpc",
+        })
     except Exception as error:
         app.logger.warning("Supabase facility RPC failed: %s", error)
         return jsonify({"success": False, "error": "Storage facilities are not configured yet. Apply the Supabase schema first."}), 502
