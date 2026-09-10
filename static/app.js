@@ -1355,8 +1355,35 @@ async function findNearestStorage() {
             statusEl.innerText = 'Searching Supabase for nearby storage facilities...';
             const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
             const data = await readJsonResponse(response, 'Storage facility search failed.');
-            if (!renderStorageResults(data.facilities || [], userLat, userLng, data.radius_km)) {
-                statusEl.innerText = `No storage facilities were found within ${data.radius_km || 200} km.`;
+            let facilities = data.facilities || [];
+            let radiusLabel = data.radius_km;
+            let usedFallback = false;
+
+            if (facilities.length === 0) {
+                statusEl.innerText = 'No registered facilities nearby — checking OpenStreetMap for warehouses/storage in your area...';
+                try {
+                    const osmPlaces = await searchStorageFallback(userLat, userLng);
+                    facilities = osmPlaces.map(p => ({
+                        name: p.name,
+                        address: p.formatted_address,
+                        facility_type: 'Storage (OpenStreetMap)',
+                        available_capacity: 'Not listed',
+                        contact_number: '',
+                        latitude: p.lat,
+                        longitude: p.lng,
+                        distance_meters: haversineKm(userLat, userLng, p.lat, p.lng) * 1000
+                    }));
+                    radiusLabel = 100;
+                    usedFallback = true;
+                } catch (fallbackError) {
+                    // keep facilities empty; fall through to "not found" messaging below
+                }
+            }
+
+            if (!renderStorageResults(facilities, userLat, userLng, radiusLabel)) {
+                statusEl.innerText = `No storage facilities were found within ${radiusLabel || 200} km (checked both the registered directory and OpenStreetMap).`;
+            } else if (usedFallback) {
+                statusEl.innerText = `No registered facilities nearby — showing ${facilities.length} facility(s) found on OpenStreetMap within 100 km:`;
             }
         } catch (error) {
             statusEl.innerText = error.message;

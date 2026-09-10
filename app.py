@@ -665,8 +665,8 @@ def search_storage_facilities():
     query = f"""
 [out:json][timeout:20];
 (
-  nwr["name"~"cold|storage|warehouse|godown|grain|agricultur",i](around:60000,{latitude},{longitude});
-  nwr["building"~"warehouse|industrial",i](around:60000,{latitude},{longitude});
+  nwr["name"~"cold|storage|warehouse|godown|grain|agricultur",i](around:100000,{latitude},{longitude});
+  nwr["building"~"warehouse|industrial",i](around:100000,{latitude},{longitude});
 );
 out center tags;
 """
@@ -686,8 +686,11 @@ out center tags;
             place_lat = point.get("lat")
             place_lon = point.get("lon")
             name = tags.get("name")
-            if not name or place_lat is None or place_lon is None:
+            if place_lat is None or place_lon is None:
                 continue
+            if not name:
+                building_type = tags.get("building", "")
+                name = f"Unnamed {building_type.title()} Facility" if building_type else "Unnamed Storage Facility"
             place_id = f"osm-{element.get('type')}-{element.get('id')}"
             if place_id in seen:
                 continue
@@ -737,7 +740,7 @@ Use facility terms that a local Google Maps search can find, such as cold storag
                 contents=[prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    max_output_tokens=256,
+                    max_output_tokens=1024,
                     thinking_config=types.ThinkingConfig(thinking_level="low")
                 )
             )
