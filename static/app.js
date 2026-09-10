@@ -8,6 +8,7 @@ let isRecognizing = false;
 let voiceDebounceTimer = null; // New timer to wait before sending
 let weatherRequestPromise = null;
 let weatherCache = null;
+let farmerProfile = null;
 
 const translations = {
     en: {
@@ -1117,229 +1118,17 @@ async function generateWeatherAction() {
     }
 }
 
-function requestWeatherFromGps() {
-    const status = document.getElementById("weather-status");
-    if (!navigator.geolocation) {
-        if (status) status.textContent = "Location is not supported by this browser. Weather cannot be loaded.";
-        return;
-    }
-    if (weatherRequestPromise) return weatherRequestPromise;
-    if (weatherCache && Date.now() - weatherCache.storedAt < 10 * 60 * 1000) {
-        return fetchWeather(weatherCache.latitude, weatherCache.longitude);
-    }
-
-    if (status) status.textContent = "Requesting your farm location...";
-    weatherRequestPromise = new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10 * 60 * 1000 });
-    }).then(position => fetchWeather(position.coords.latitude, position.coords.longitude))
-        .catch(error => {
-            const message = error.code === 1 ? "Location permission was denied. Allow location access to see real weather." : "Could not read your location. Weather was not loaded.";
-            if (status) status.textContent = message;
-            document.getElementById("weather-metrics").innerHTML = "";
-            document.getElementById("weather-forecast").innerHTML = `<tr><td colspan="7">${t('weatherNeedsGps')}</td></tr>`;
-        })
-        .finally(() => { weatherRequestPromise = null; });
-    return weatherRequestPromise;
-}
-
-function useFarmLocation() {
-    requestWeatherFromGps();
-}
-
-async function loadProfile() {
-    try {
-        const response = await fetch("/api/profile");
-        if (!response.ok) return;
-        const data = await response.json();
-        const profile = data.profile || {};
-        document.getElementById("display-farmer").textContent = profile.full_name || "Farmer profile";
-    } catch (error) { console.warn("Profile unavailable", error); }
-}
-
-async function openProfile() {
-    const response = await fetch("/api/profile");
-    const data = await response.json();
-    const profile = data.profile || {};
-    document.getElementById("profile-name").value = profile.full_name || "";
-    document.getElementById("profile-latitude").value = profile.latitude || "";
-    document.getElementById("profile-longitude").value = profile.longitude || "";
-    document.getElementById("profile-location-name").value = profile.location_name || "";
-    document.getElementById("profile-modal").classList.remove("hidden");
-}
-
-function closeProfile() { document.getElementById("profile-modal").classList.add("hidden"); }
-
-function useProfileLocation() {
-    navigator.geolocation?.getCurrentPosition(position => {
-        document.getElementById("profile-latitude").value = position.coords.latitude.toFixed(6);
-        document.getElementById("profile-longitude").value = position.coords.longitude.toFixed(6);
-    });
-}
-
-async function saveProfile(event) {
-    event.preventDefault();
-    const payload = { full_name: document.getElementById("profile-name").value, latitude: document.getElementById("profile-latitude").value, longitude: document.getElementById("profile-longitude").value, location_name: document.getElementById("profile-location-name").value };
-    const response = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await response.json();
-    if (!response.ok || !data.success) { showToast(data.error || "Profile could not be saved.", "error"); return; }
-    closeProfile();
-    document.getElementById("display-farmer").textContent = payload.full_name;
-    requestWeatherFromGps();
-    showToast("Profile and farm location updated.", "success");
-}
-
-async function deleteMyAccountData() {
-    if (!window.confirm("Delete only your crop records and profile data? This cannot be undone.")) return;
-    const response = await fetch("/api/profile", { method: "DELETE" });
-    const data = await response.json();
-    if (!response.ok || !data.success) { showToast(data.error || "Deletion failed.", "error"); return; }
-    window.location.href = "/auth";
-}
-// ===== Nearest Storage Facility Finder (Google Maps Places) =====
-let storageFinderBatchId = null;
-let storageFinderMap = null;
-let storageFinderLayer = null;
-
-function openStorageFinder(batchId) {
-    storageFinderBatchId = batchId;
-    const batch = produceBatches.find(b => b.id === batchId);
-    const subtitle = document.getElementById('storage-finder-subtitle');
-    if (subtitle) subtitle.innerText = batch ? `Finding storage for: ${batch.crop_name} (${batch.quantity_kg} KG)` : 'Finding storage for: —';
-    document.getElementById('storage-finder-results').innerHTML = '';
-    document.getElementById('storage-finder-status').innerText = '';
-    document.getElementById('storage-finder-recommendation').classList.add('hidden');
-    document.getElementById('storage-finder-map').innerHTML = '';
-    document.getElementById('storage-finder-modal').classList.remove('hidden');
-}
-
-function closeStorageFinder() {
-    if (storageFinderMap) storageFinderMap.remove();
-    storageFinderMap = null;
-    storageFinderLayer = null;
-    document.getElementById('storage-finder-modal').classList.add('hidden');
-}
-
 function haversineKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const earthRadiusKm = 6371;
+    const deltaLat = (lat2 - lat1) * Math.PI / 180;
+    const deltaLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(deltaLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(deltaLon / 2) ** 2;
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function runTextSearch(service, query, location, radius) {
-    return new Promise(resolve => {
-        service.textSearch({ query, location, radius }, (results, status) => {
-            resolve({ status, results: results || [] });
-        });
-    });
-}
-
-function loadGooglePlaces() {
-    if (window.google?.maps?.places) return Promise.resolve(true);
-    if (!window.GOOGLE_MAPS_API_KEY) return Promise.resolve(false);
-    if (window.googlePlacesPromise) return window.googlePlacesPromise;
-    window.googlePlacesPromise = new Promise(resolve => {
-        const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(window.GOOGLE_MAPS_API_KEY)}&libraries=places`;
-        script.async = true;
-        script.onload = () => resolve(Boolean(window.google?.maps?.places));
-        script.onerror = () => resolve(false);
-        document.head.appendChild(script);
-    });
-    return window.googlePlacesPromise;
-}
-
-const GOOGLE_STORAGE_SEARCH_RADIUS_METERS = 50000; // Places API (New) caps locationBias circle at 50km
-
-async function searchGoogleStorage(userLat, userLng, queries) {
-    if (!window.GOOGLE_PLACES_API_KEY) {
-        console.warn('[storage-finder] GOOGLE_PLACES_API_KEY was not injected into the page — check app.py\'s render_template call and your .env value.');
-        return [];
-    }
-    const places = new Map();
-    for (const query of queries.slice(0, 3)) {
-        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-Api-Key': window.GOOGLE_PLACES_API_KEY,
-                'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.internationalPhoneNumber'
-            },
-            body: JSON.stringify({
-                textQuery: query,
-                languageCode: 'en',
-                locationBias: {
-                    circle: {
-                        center: { latitude: userLat, longitude: userLng },
-                        radius: GOOGLE_STORAGE_SEARCH_RADIUS_METERS
-                    }
-                },
-                maxResultCount: 20
-            })
-        });
-        if (!response.ok) {
-            const message = await response.text();
-            let reason = `status ${response.status}`;
-            try {
-                const parsed = JSON.parse(message);
-                reason = parsed.error?.message || parsed.error?.status || reason;
-            } catch (_) { /* body wasn't JSON, keep the raw status */ }
-            // Log the raw response too — the parsed "reason" is sometimes generic
-            // (e.g. "API_KEY_SERVICE_BLOCKED"), and the full body pinpoints the fix.
-            console.error(`[storage-finder] Google Places request failed for query "${query}":`, message);
-            throw new Error(`Google Places error: ${reason}`);
-        }
-        const data = await response.json();
-        (data.places || []).forEach(place => {
-            if (place.id && place.location) places.set(place.id, place);
-        });
-    }
-
-    if (places.size > 0) {
-        return Array.from(places.values()).map(place => ({
-            name: place.displayName?.text || 'Storage facility',
-            address: place.formattedAddress || '',
-            facility_type: 'Google Places facility',
-            available_capacity: 'Contact facility',
-            contact_number: place.internationalPhoneNumber || '',
-            latitude: place.location.latitude,
-            longitude: place.location.longitude,
-            distance_meters: haversineKm(userLat, userLng, place.location.latitude, place.location.longitude) * 1000,
-            place_id: place.id
-        }));
-    }
-
-    // Keep legacy Places as a compatibility fallback for projects that enabled it.
-    if (!await loadGooglePlaces()) return [];
-    const location = new google.maps.LatLng(userLat, userLng);
-    const service = new google.maps.places.PlacesService(document.createElement('div'));
-    const results = new Map();
-    for (const query of queries.slice(0, 3)) {
-        const response = await runTextSearch(service, query, location, 200000);
-        if (response.status === google.maps.places.PlacesServiceStatus.OK) {
-            response.results.forEach(place => {
-                if (place.place_id && place.geometry?.location) results.set(place.place_id, place);
-            });
-        }
-    }
-    return Array.from(results.values()).map(place => ({
-        name: place.name,
-        address: place.formatted_address || place.vicinity || '',
-        facility_type: 'Google Places facility',
-        available_capacity: 'Contact facility',
-        contact_number: place.formatted_phone_number || '',
-        latitude: place.geometry.location.lat(),
-        longitude: place.geometry.location.lng(),
-        distance_meters: haversineKm(userLat, userLng, place.geometry.location.lat(), place.geometry.location.lng()) * 1000,
-        place_id: place.place_id
-    }));
-}
-
-function renderStorageResults(facilities, userLat, userLng, radiusKm = 200) {
+function renderStorageResults(facilities, userLat, userLng, radiusKm = 100) {
     const resultsEl = document.getElementById('storage-finder-results');
     const mapEl = document.getElementById('storage-finder-map');
-    const recommendation = document.getElementById('storage-finder-recommendation');
 
     if (storageFinderMap) storageFinderMap.remove();
     storageFinderMap = L.map(mapEl).setView([userLat, userLng], 11);
@@ -1361,61 +1150,21 @@ function renderStorageResults(facilities, userLat, userLng, radiusKm = 200) {
     resultsEl.innerHTML = withDistance.map(({ facility, distanceKm }) => {
         const lat = Number(facility.latitude);
         const lng = Number(facility.longitude);
-        const directionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${userLat},${userLng}&destination=${lat},${lng}`;
+        const directionsUrl = `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${userLat}%2C${userLng}%3B${lat}%2C${lng}`;
         L.marker([lat, lng]).addTo(storageFinderLayer).bindPopup(`
             <strong>${facility.name}</strong><br>
-            Type: ${facility.facility_type}<br>
-            Capacity: ${facility.available_capacity}<br>
-            Contact: ${facility.contact_number}<br>
+            Type: ${facility.category}<br>
+            Address: ${facility.address}<br>
             Distance: ${distanceKm.toFixed(1)} km
         `);
         return `
             <div class="batch-card">
-                <div><span class="crop-title">${facility.name}</span><small style="display:block; color: var(--text-muted);">${facility.address || ''}</small></div>
-                <div><span class="detail-lbl">${facility.facility_type}</span><span class="detail-val">${distanceKm.toFixed(1)} km</span><small style="display:block; color: var(--text-muted);">${facility.available_capacity || 'Capacity not listed'}</small></div>
-                <div><a href="tel:${facility.contact_number || ''}" class="btn-secondary" style="display:inline-block; text-decoration:none; text-align:center;">Click to Call</a></div>
+                <div><span class="crop-title">${facility.name}</span><small style="display:block; color: var(--text-muted);">${facility.address || 'Location details not listed'}</small></div>
+                <div><span class="detail-lbl">${facility.category || 'Storage facility'}</span><span class="detail-val">${distanceKm.toFixed(1)} km</span></div>
                 <div><a class="btn-secondary" style="display:inline-block; text-decoration:none; text-align:center;" href="${directionsUrl}" target="_blank" rel="noopener">Get Directions</a></div>
             </div>`;
     }).join('');
     return true;
-}
-
-function renderStorageRecommendation(plan) {
-    const recommendation = document.getElementById('storage-finder-recommendation');
-    if (!recommendation || !plan) return;
-    recommendation.classList.remove('hidden');
-    recommendation.innerHTML = `<strong>Gemini recommends: ${plan.storage_type}</strong><span>${plan.reason}</span>`;
-}
-
-async function searchStorageFallback(userLat, userLng) {
-    const response = await fetch(`/api/storage/search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error || 'Fallback search failed.');
-    return data.places || [];
-}
-
-async function readJsonResponse(response, fallbackMessage) {
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-        const body = await response.text();
-        throw new Error(response.ok ? fallbackMessage : `Server error (${response.status}). Please try again.`);
-    }
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.error || fallbackMessage);
-    return data;
-}
-
-async function recommendStorageForBatch(batch) {
-    const response = await fetch('/api/storage/recommend', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            crop_name: batch?.crop_name || 'Produce',
-            variety: batch?.variety || 'Not specified',
-            quantity_kg: batch?.quantity_kg || 0
-        })
-    });
-    return readJsonResponse(response, 'Storage recommendation failed.');
 }
 
 async function findNearestStorage() {
@@ -1423,97 +1172,38 @@ async function findNearestStorage() {
     const resultsEl = document.getElementById('storage-finder-results');
     const btn = document.getElementById('storage-finder-locate-btn');
 
-    if (!navigator.geolocation) {
-        statusEl.innerText = 'Geolocation is not supported on this device/browser.';
-        return;
-    }
     btn.disabled = true;
     statusEl.innerText = 'Getting your location...';
     resultsEl.innerHTML = '';
-    const batch = produceBatches.find(b => b.id === storageFinderBatchId) || {};
+    const userLat = Number(farmerProfile?.latitude);
+    const userLng = Number(farmerProfile?.longitude);
+    if (!Number.isFinite(userLat) || !Number.isFinite(userLng)) {
+        statusEl.innerText = 'Save your farm latitude and longitude in Profile before searching.';
+        btn.disabled = false;
+        return;
+    }
 
-    navigator.geolocation.getCurrentPosition(async position => {
-        const userLat = position.coords.latitude;
-        const userLng = position.coords.longitude;
+    (async () => {
         if (!window.L) {
             statusEl.innerText = 'The map service is still loading. Please try again.';
             btn.disabled = false;
             return;
         }
-        let storagePlan;
         try {
-            statusEl.innerText = 'Gemini is identifying the right storage facility...';
-            storagePlan = await recommendStorageForBatch(batch);
-        } catch (error) {
-            storagePlan = {
-                storage_type: 'Agricultural storage facility',
-                reason: 'Gemini is temporarily unavailable; showing nearby registered facilities.'
-            };
-        }
-        renderStorageRecommendation(storagePlan);
-
-        try {
-            statusEl.innerText = 'Searching Google Maps for nearby storage facilities...';
-            let googleSearchError = null;
-            let facilities = [];
-            try {
-                facilities = await searchGoogleStorage(
-                    userLat,
-                    userLng,
-                    storagePlan.search_queries || ['cold storage', 'agricultural warehouse']
-                );
-            } catch (error) {
-                googleSearchError = error;
-                console.error('[storage-finder] Google Places search failed:', error);
-            }
-            let radiusLabel = GOOGLE_STORAGE_SEARCH_RADIUS_METERS / 1000;
-            let usedFallback = false;
-
-            if (facilities.length === 0) {
-                statusEl.innerText = googleSearchError
-                    ? `${googleSearchError.message} Checking registered facilities...`
-                    : 'Google Maps found no results; checking registered facilities...';
-                const response = await fetch(`/api/storage/rpc-search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
-                const data = await readJsonResponse(response, 'Storage facility search failed.');
-                facilities = data.facilities || [];
-                radiusLabel = data.radius_km;
-                usedFallback = true;
-            }
-
-            if (facilities.length === 0) {
-                statusEl.innerText = 'No registered facilities nearby — checking OpenStreetMap for warehouses/storage in your area...';
-                try {
-                    const osmPlaces = await searchStorageFallback(userLat, userLng);
-                    facilities = osmPlaces.map(p => ({
-                        name: p.name,
-                        address: p.formatted_address,
-                        facility_type: 'Storage (OpenStreetMap)',
-                        available_capacity: 'Not listed',
-                        contact_number: '',
-                        latitude: p.lat,
-                        longitude: p.lng,
-                        distance_meters: haversineKm(userLat, userLng, p.lat, p.lng) * 1000
-                    }));
-                    radiusLabel = 100;
-                    usedFallback = true;
-                } catch (fallbackError) {
-                    // keep facilities empty; fall through to "not found" messaging below
-                }
-            }
-
-            if (!renderStorageResults(facilities, userLat, userLng, radiusLabel)) {
-                statusEl.innerText = `No storage facilities were found within ${radiusLabel || 200} km (checked both the registered directory and OpenStreetMap).`;
-            } else if (usedFallback) {
-                statusEl.innerText = `Google Maps had no matching facilities — showing ${facilities.length} registered facility(s) within ${radiusLabel} km:`;
+            statusEl.innerText = 'Searching OpenStreetMap within 10 km...';
+            const response = await fetch(`/api/storage/search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) throw new Error(`Storage search server error (${response.status}).`);
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'OpenStreetMap search failed.');
+            if (!renderStorageResults(data.facilities || [], userLat, userLng, data.radius_km)) {
+                statusEl.innerText = 'No storage facility found nearby within 100 km.';
             }
         } catch (error) {
             statusEl.innerText = error.message;
-            resultsEl.innerHTML = '<div class="empty-admin">Storage search failed. Please try again.</div>';
+            resultsEl.innerHTML = '<div class="empty-admin">OpenStreetMap search failed. Please try again.</div>';
         } finally {
             btn.disabled = false;
         }
-    }, error => {
-        btn.disabled = false;
-        statusEl.innerText = 'Could not get your location. Please allow location access and try again.';
-    }, { enableHighAccuracy: true, timeout: 10000 });
+    })();
 }

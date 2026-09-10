@@ -9,12 +9,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-    {% if google_maps_api_key %}
-    <script>window.GOOGLE_MAPS_API_KEY = {{ google_maps_api_key|tojson }};</script>
-    {% endif %}
-    {% if google_places_api_key %}
-    <script>window.GOOGLE_PLACES_API_KEY = {{ google_places_api_key|tojson }};</script>
-    {% endif %}
 </head>
 <body>
 
@@ -493,16 +487,15 @@
     </main>
 
     <div id="storage-finder-modal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="storage-finder-title">
-        <div class="profile-card">
+        <div class="profile-card storage-finder-card">
             <div class="form-header">
-                <div><h3 id="storage-finder-title">Find nearest storage facility</h3><p class="subtitle" id="storage-finder-subtitle">Finding storage for: —</p></div>
+                <div><h3 id="storage-finder-title">Find nearby storage facilities</h3><p class="subtitle" id="storage-finder-subtitle">Using your saved farm location</p></div>
                 <button class="btn-close-profile" onclick="closeStorageFinder()" type="button">×</button>
             </div>
             <div class="profile-actions" style="margin-bottom:12px;">
-                <button class="auth-submit" type="button" id="storage-finder-locate-btn" onclick="findNearestStorage()">📍 Use my location & search</button>
+                <button class="auth-submit" type="button" id="storage-finder-locate-btn" onclick="findNearestStorage()">Search from saved farm location</button>
             </div>
             <div id="storage-finder-status" style="font-size:13px; color:var(--text-muted); margin-bottom:8px;"></div>
-            <div id="storage-finder-recommendation" class="storage-recommendation hidden"></div>
             <div id="storage-finder-map" class="storage-finder-map" aria-label="Nearby storage facility map"></div>
             <div id="storage-finder-results" class="batch-cards-grid"></div>
         </div>
@@ -574,6 +567,5 @@
 
     <script src="/static/app.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </body>
 </html>
