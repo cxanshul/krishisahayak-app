@@ -489,11 +489,11 @@
     <div id="storage-finder-modal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="storage-finder-title">
         <div class="profile-card storage-finder-card">
             <div class="form-header">
-                <div><h3 id="storage-finder-title">Find nearby storage facilities</h3><p class="subtitle" id="storage-finder-subtitle">Using your saved farm location</p></div>
+                <div><h3 id="storage-finder-title">Nearest storage facility</h3><p class="subtitle" id="storage-finder-subtitle">Your closest mapped facility will be shown first</p></div>
                 <button class="btn-close-profile" onclick="closeStorageFinder()" type="button">×</button>
             </div>
             <div class="profile-actions" style="margin-bottom:12px;">
-                <button class="auth-submit" type="button" id="storage-finder-locate-btn" onclick="findNearestStorage()">Search from saved farm location</button>
+                <button class="auth-submit" type="button" id="storage-finder-locate-btn" onclick="findNearestStorage()">Find nearest facility</button>
             </div>
             <div id="storage-finder-status" style="font-size:13px; color:var(--text-muted); margin-bottom:8px;"></div>
             <div id="storage-finder-map" class="storage-finder-map" aria-label="Nearby storage facility map"></div>

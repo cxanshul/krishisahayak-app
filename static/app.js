@@ -1342,15 +1342,8 @@ async function findNearestStorage() {
     const btn = document.getElementById('storage-finder-locate-btn');
 
     btn.disabled = true;
-    statusEl.innerText = 'Getting your location...';
+    statusEl.innerText = 'Getting your farm location...';
     resultsEl.innerHTML = '';
-    const userLat = Number(farmerProfile?.latitude);
-    const userLng = Number(farmerProfile?.longitude);
-    if (!Number.isFinite(userLat) || !Number.isFinite(userLng)) {
-        statusEl.innerText = 'Save your farm latitude and longitude in Profile before searching.';
-        btn.disabled = false;
-        return;
-    }
 
     (async () => {
         if (!window.L) {
@@ -1359,7 +1352,24 @@ async function findNearestStorage() {
             return;
         }
         try {
-            statusEl.innerText = 'Searching OpenStreetMap within 10 km...';
+            let userLat = Number(farmerProfile?.latitude);
+            let userLng = Number(farmerProfile?.longitude);
+            if (!Number.isFinite(userLat) || !Number.isFinite(userLng)) {
+                if (!navigator.geolocation) throw new Error('Location is not supported by this browser.');
+                statusEl.innerText = 'Detecting your location automatically...';
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 300000
+                    });
+                });
+                userLat = position.coords.latitude;
+                userLng = position.coords.longitude;
+                farmerProfile = { ...(farmerProfile || {}), latitude: userLat, longitude: userLng };
+            }
+
+            statusEl.innerText = 'Finding the nearest storage facility...';
             const response = await fetch(`/api/storage/search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
             const contentType = response.headers.get('content-type') || '';
             if (!contentType.includes('application/json')) throw new Error(`Storage search server error (${response.status}).`);
@@ -1369,7 +1379,9 @@ async function findNearestStorage() {
                 statusEl.innerText = data.message || `No storage facility found nearby within ${data.radius_km || 50} km.`;
             }
         } catch (error) {
-            statusEl.innerText = error.message;
+            statusEl.innerText = error.code === 1
+                ? 'Location permission was denied. Allow location access or save coordinates in Profile.'
+                : (error.message || 'Could not determine your farm location.');
             resultsEl.innerHTML = '<div class="empty-admin">OpenStreetMap search failed. Please try again.</div>';
         } finally {
             btn.disabled = false;
