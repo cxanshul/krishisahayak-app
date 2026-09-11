@@ -1377,6 +1377,14 @@ async function findNearestStorage() {
             if (!response.ok || !data.success) throw new Error(data.error || 'OpenStreetMap search failed.');
             if (!renderStorageResults(data.facilities || [], userLat, userLng, data.radius_km)) {
                 statusEl.innerText = data.message || `No storage facility found nearby within ${data.radius_km || 50} km.`;
+                const mapSearchUrl = `https://www.google.com/maps/search/storage+facility/@${userLat},${userLng},12z`;
+                resultsEl.innerHTML = `
+                    <div class="empty-admin">
+                        No mapped facility was returned for this area.
+                        <a class="btn-secondary" style="display:inline-block; margin-top:10px; text-decoration:none;" href="${mapSearchUrl}" target="_blank" rel="noopener">
+                            Open nearest storage search
+                        </a>
+                    </div>`;
             }
         } catch (error) {
             statusEl.innerText = error.code === 1

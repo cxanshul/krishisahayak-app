@@ -59,6 +59,11 @@ ACCUWEATHER_API_KEY = env_value("ACCUWEATHER_API_KEY")
 ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_API_URLS = (
+    OVERPASS_API_URL,
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+)
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lon": 68.0, "max_lon": 98.0}
 WEATHER_CACHE_TTL_SECONDS = 2700
 WEATHER_CACHE = {}
@@ -730,7 +735,7 @@ def search_storage_facilities():
                     "bounded": 1,
                 },
                 headers={"User-Agent": "HackBhoomi/1.0 (agriculture storage finder)"},
-                timeout=5.0,
+                timeout=3.0,
             )
             response.raise_for_status()
             for item in response.json():
@@ -759,49 +764,61 @@ def search_storage_facilities():
         except (requests.RequestException, ValueError, TypeError) as error:
             app.logger.warning("Nominatim storage search failed for %s: %s", search_term, error)
 
-    if places:
-        places.sort(key=lambda place: place["distance_km"])
-        return jsonify({"success": True, "facilities": places[:50], "radius_km": radius_km, "source": "OpenStreetMap Nominatim"})
-
-    # Keep one short Overpass fallback for facilities that are mapped without a searchable name.
+    # Overpass finds unnamed warehouses and storage buildings that text search misses.
     query = f"""
-[out:json][timeout:8];
+[out:json][timeout:15];
 (
-  nwr["amenity"~"warehouse|marketplace|storage",i](around:25000,{latitude},{longitude});
-  nwr["building"~"warehouse|silo",i](around:25000,{latitude},{longitude});
-  nwr["man_made"="silo"](around:25000,{latitude},{longitude});
+  nwr["amenity"~"warehouse|storage|cold_storage",i](around:{radius_km * 1000},{latitude},{longitude});
+  nwr["building"~"warehouse|silo",i](around:{radius_km * 1000},{latitude},{longitude});
+  nwr["man_made"="silo"](around:{radius_km * 1000},{latitude},{longitude});
 );
 out center tags;
 """
-    try:
-        response = requests.post(
-            OVERPASS_API_URL,
-            data=query,
-            headers={"User-Agent": "HackBhoomi/1.0 (agriculture storage finder)"},
-            timeout=10.0,
-        )
-        response.raise_for_status()
-        for element in response.json().get("elements", []):
-            tags = element.get("tags", {})
-            point = element.get("center", element)
-            place_lat = safe_float(point.get("lat"), None)
-            place_lon = safe_float(point.get("lon"), None)
-            if place_lat is None or place_lon is None:
-                continue
-            places.append({
-                "place_id": f"osm-{element.get('type')}-{element.get('id')}",
-                "name": tags.get("name") or tags.get("official_name") or "Unnamed storage facility",
-                "category": tags.get("amenity") or tags.get("building") or tags.get("man_made") or "Storage facility",
-                "address": tags.get("addr:full") or tags.get("description") or "Location details not listed",
-                "latitude": place_lat,
-                "longitude": place_lon,
-                "distance_km": haversine_distance_km(latitude, longitude, place_lat, place_lon),
-            })
-        places.sort(key=lambda place: place["distance_km"])
-        return jsonify({"success": True, "facilities": places[:50], "radius_km": 25, "source": "OpenStreetMap Overpass"})
-    except (requests.RequestException, ValueError, TypeError) as error:
-        app.logger.warning("Overpass storage fallback failed: %s", error)
-        return jsonify({"success": True, "facilities": [], "radius_km": radius_km, "source": "OpenStreetMap", "message": "No mapped storage facilities were found nearby."})
+    for overpass_url in OVERPASS_API_URLS[:2]:
+        try:
+            response = requests.post(
+                overpass_url,
+                data=query.encode("utf-8"),
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "User-Agent": "HackBhoomi/1.0 (agriculture storage finder)",
+                },
+                timeout=8.0,
+            )
+            response.raise_for_status()
+            for element in response.json().get("elements", []):
+                tags = element.get("tags", {})
+                point = element.get("center", element)
+                place_lat = safe_float(point.get("lat"), None)
+                place_lon = safe_float(point.get("lon"), None)
+                distance_km = haversine_distance_km(latitude, longitude, place_lat, place_lon) if place_lat is not None and place_lon is not None else None
+                place_id = f"osm-{element.get('type')}-{element.get('id')}"
+                if place_id in seen or distance_km is None or distance_km > radius_km:
+                    continue
+                seen.add(place_id)
+                places.append({
+                    "place_id": place_id,
+                    "name": tags.get("name") or tags.get("official_name") or "Unnamed storage facility",
+                    "category": tags.get("amenity") or tags.get("building") or tags.get("man_made") or "Storage facility",
+                    "address": tags.get("addr:full") or tags.get("description") or "Location details not listed",
+                    "latitude": place_lat,
+                    "longitude": place_lon,
+                    "distance_km": distance_km,
+                })
+            if places:
+                break
+        except (requests.RequestException, ValueError, TypeError) as error:
+            app.logger.warning("Overpass storage search failed at %s: %s", overpass_url, error)
+
+    places.sort(key=lambda place: place["distance_km"])
+    return jsonify({
+        "success": True,
+        "facilities": places[:50],
+        "radius_km": radius_km,
+        "source": "OpenStreetMap",
+        "message": None if places else "No mapped storage facilities were found within 50 km.",
+    })
 
 @app.route("/api/produce/list", methods=["GET"])
 @require_auth
