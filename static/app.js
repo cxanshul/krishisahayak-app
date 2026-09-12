@@ -1,4 +1,4 @@
-let currentLang = 'en';
+let currentLang = localStorage.getItem('hackbhoomi-language') || 'en';
 let produceBatches = [];
 let mandiRecordsCache = [];
 let selectedImageBase64 = null;
@@ -98,6 +98,7 @@ function t(key) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    setLanguage(currentLang);
     try {
         const today = new Date().toISOString().split('T')[0];
         const h = document.getElementById("harvest_date");
@@ -286,6 +287,8 @@ function showToast(msg, type = "info") {
 
 function setLanguage(lang) {
     currentLang = lang;
+    localStorage.setItem('hackbhoomi-language', lang);
+    document.documentElement.lang = lang;
     const btnEn = document.getElementById('btn-en');
     const btnHi = document.getElementById('btn-hi');
     if (btnEn) btnEn.classList.toggle('active', lang === 'en');
@@ -294,6 +297,9 @@ function setLanguage(lang) {
     document.querySelectorAll('[data-en]').forEach(el => {
         const text = el.getAttribute(`data-${lang}`);
         if (text) el.textContent = text;
+    });
+    document.querySelectorAll('[data-placeholder-en]').forEach(el => {
+        el.placeholder = el.getAttribute(`data-placeholder-${lang}`) || el.placeholder;
     });
 
     const chatLangIndicator = document.getElementById("chat-lang-indicator");
@@ -1309,10 +1315,23 @@ function renderStorageResults(facilities, userLat, userLng, radiusKm = 100) {
 
     const farmIcon = L.divIcon({ className: 'farm-location-marker', html: '<span></span>', iconSize: [18, 18], iconAnchor: [9, 9] });
     L.marker([userLat, userLng], { icon: farmIcon }).addTo(storageFinderLayer).bindPopup('<strong>Your Farm</strong>');
-    const withDistance = facilities.map(facility => ({
-        facility,
-        distanceKm: Number(facility.distance_km || facility.distance_meters / 1000 || 0)
-    })).sort((a, b) => a.distanceKm - b.distanceKm);
+    const withDistance = facilities.map(facility => {
+        const latitude = Number(facility.lat ?? facility.latitude);
+        const longitude = Number(facility.lng ?? facility.longitude);
+        const distanceKm = Number(facility.distance_km ?? facility.distance_meters / 1000);
+        return {
+            facility: {
+                ...facility,
+                name: facility.name || 'Storage facility',
+                address: facility.formatted_address || facility.address || 'Location details not listed',
+                category: facility.category || facility.source || 'Storage facility',
+                latitude,
+                longitude
+            },
+            distanceKm: Number.isFinite(distanceKm) ? distanceKm : haversineKm(userLat, userLng, latitude, longitude)
+        };
+    }).filter(({ facility }) => Number.isFinite(facility.latitude) && Number.isFinite(facility.longitude))
+      .sort((a, b) => a.distanceKm - b.distanceKm);
 
     if (withDistance.length === 0) return false;
     document.getElementById('storage-finder-status').innerText = `Found ${withDistance.length} storage facilities within ${radiusKm} km, sorted by distance:`;
@@ -1369,28 +1388,63 @@ async function findNearestStorage() {
                 farmerProfile = { ...(farmerProfile || {}), latitude: userLat, longitude: userLng };
             }
 
-            statusEl.innerText = 'Finding the nearest storage facility...';
-            const response = await fetch(`/api/storage/search?latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`);
-            const contentType = response.headers.get('content-type') || '';
-            if (!contentType.includes('application/json')) throw new Error(`Storage search server error (${response.status}).`);
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || 'OpenStreetMap search failed.');
-            if (!renderStorageResults(data.facilities || [], userLat, userLng, data.radius_km)) {
-                statusEl.innerText = data.message || `No storage facility found nearby within ${data.radius_km || 50} km.`;
-                const mapSearchUrl = `https://www.google.com/maps/search/storage+facility/@${userLat},${userLng},12z`;
-                resultsEl.innerHTML = `
-                    <div class="empty-admin">
-                        No mapped facility was returned for this area.
-                        <a class="btn-secondary" style="display:inline-block; margin-top:10px; text-decoration:none;" href="${mapSearchUrl}" target="_blank" rel="noopener">
-                            Open nearest storage search
-                        </a>
-                    </div>`;
+            const locationQuery = `latitude=${encodeURIComponent(userLat)}&longitude=${encodeURIComponent(userLng)}`;
+            let places = [];
+
+            statusEl.innerText = 'Checking TomTom for the nearest storage facility...';
+            try {
+                const tomtomResponse = await fetch(`/api/storage/search-tomtom?${locationQuery}`);
+                if (!tomtomResponse.ok) {
+                    console.error('TomTom storage search response:', await tomtomResponse.text());
+                } else {
+                    const tomtomData = await tomtomResponse.json();
+                    places = tomtomData.places || [];
+                }
+            } catch (error) {
+                console.error('TomTom storage search failed:', error);
             }
+            if (places.length && renderStorageResults(places, userLat, userLng, 100)) return;
+
+            statusEl.innerText = 'Checking registered facilities...';
+            try {
+                const registeredResponse = await fetch(`/api/storage/rpc-search?${locationQuery}`);
+                if (registeredResponse.ok) {
+                    const registeredData = await registeredResponse.json();
+                    places = registeredData.places || registeredData.facilities || [];
+                }
+            } catch (error) {
+                console.error('Registered storage search failed:', error);
+            }
+            if (places.length && renderStorageResults(places, userLat, userLng, 100)) return;
+
+            statusEl.innerText = 'Checking map facilities...';
+            try {
+                const fallbackResponse = await fetch(`/api/storage/search?${locationQuery}`);
+                if (fallbackResponse.ok) {
+                    const fallbackData = await fallbackResponse.json();
+                    places = fallbackData.facilities || fallbackData.places || [];
+                    if (places.length && renderStorageResults(places, userLat, userLng, fallbackData.radius_km || 50)) return;
+                    statusEl.innerText = fallbackData.message || 'No storage facilities found near your location.';
+                } else {
+                    statusEl.innerText = 'Storage services are unavailable right now. Please try again.';
+                }
+            } catch (error) {
+                console.error('Map storage search failed:', error);
+                statusEl.innerText = 'Storage services are unavailable right now. Please try again.';
+            }
+            const mapSearchUrl = `https://www.google.com/maps/search/storage+facility/@${userLat},${userLng},12z`;
+            resultsEl.innerHTML = `
+                <div class="empty-admin">
+                    No mapped facility was returned for this area.
+                    <a class="btn-secondary" style="display:inline-block; margin-top:10px; text-decoration:none;" href="${mapSearchUrl}" target="_blank" rel="noopener">
+                        Open nearest storage search
+                    </a>
+                </div>`;
         } catch (error) {
             statusEl.innerText = error.code === 1
                 ? 'Location permission was denied. Allow location access or save coordinates in Profile.'
                 : (error.message || 'Could not determine your farm location.');
-            resultsEl.innerHTML = '<div class="empty-admin">OpenStreetMap search failed. Please try again.</div>';
+            resultsEl.innerHTML = '<div class="empty-admin">Storage search failed. Please try again.</div>';
         } finally {
             btn.disabled = false;
         }

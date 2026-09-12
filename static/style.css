@@ -952,6 +952,12 @@ body {
 .empty-admin { color: var(--text-muted); font-size: 12px; padding: 14px 0; }
 .admin-error { background: #fbe9e4; border: 1px solid #e6b4a8; color: var(--risk-red); padding: 12px 14px; margin-top: 18px; font-size: 13px; }
 .admin-error.hidden { display: none; }
+.admin-tools { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 13px; padding: 16px 20px; }
+.admin-tools h3 { font: 700 19px var(--font-serif); margin-top: 4px; }
+.admin-tool-actions { display: flex; align-items: center; justify-content: flex-end; gap: 16px; flex-wrap: wrap; }
+.admin-check { color: var(--text-muted); font-size: 12px; display: inline-flex; align-items: center; gap: 7px; }
+.admin-check input { accent-color: var(--leaf-green); }
+.admin-health { color: var(--leaf-green); font-size: 11px; font-weight: 700; }
 @keyframes grow-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 @media (max-width: 950px) {
@@ -973,6 +979,8 @@ body {
     .admin-insight-strip > div:nth-child(2) { border-right: 0; }
     .admin-insight-strip > div:nth-child(3), .admin-insight-strip > div:nth-child(4) { border-bottom: 0; }
     .analysis-panel { padding: 16px 13px; }
+    .admin-tools { display: block; }
+    .admin-tool-actions { justify-content: flex-start; margin-top: 14px; }
     .table-head { display: block; }
     .admin-filter { width: 100%; margin-top: 12px; }
 }

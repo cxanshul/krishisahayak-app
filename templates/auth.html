@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KrishiSahayak - Sign in</title>
+    <title data-en="HackBhoomi - Sign in" data-hi="हैकभूमि - साइन इन">HackBhoomi - Sign in</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -24,44 +24,63 @@
                 <span class="scene-leaf"></span>
             </div>
             <p class="auth-kicker">HACKBHOOMI</p>
-            <h1>Know your farm. Grow with confidence.</h1>
-            <p>Securely manage your crop records, costs, mandi rates, and AI advice in one place.</p>
+            <h1 data-en="Know your farm. Grow with confidence." data-hi="अपने खेत को जानें। भरोसे के साथ बढ़ें।">Know your farm. Grow with confidence.</h1>
+            <p data-en="Securely manage your crop records, costs, mandi rates, and AI advice in one place." data-hi="अपने फसल रिकॉर्ड, लागत, मंडी भाव और एआई सलाह को एक जगह सुरक्षित संभालें।">Securely manage your crop records, costs, mandi rates, and AI advice in one place.</p>
         </section>
         <section class="auth-card">
             <div class="auth-tabs">
-                <button id="login-tab" class="auth-tab active" type="button" onclick="setAuthMode('login')">Log in</button>
-                <button id="register-tab" class="auth-tab" type="button" onclick="setAuthMode('register')">Create account</button>
+                <button id="login-tab" class="auth-tab active" type="button" onclick="setAuthMode('login')" data-en="Log in" data-hi="लॉग इन">Log in</button>
+                <button id="register-tab" class="auth-tab" type="button" onclick="setAuthMode('register')" data-en="Create account" data-hi="खाता बनाएं">Create account</button>
             </div>
-            <h2 id="auth-title">Welcome back</h2>
-            <p id="auth-subtitle" class="auth-subtitle">Log in to access your farm dashboard.</p>
+            <div class="lang-switch">
+                <button id="auth-btn-en" class="btn-lang active" type="button" onclick="setAuthLanguage('en')">English</button>
+                <button id="auth-btn-hi" class="btn-lang" type="button" onclick="setAuthLanguage('hi')">हिंदी</button>
+            </div>
+            <h2 id="auth-title" data-en="Welcome back" data-hi="वापसी पर स्वागत है">Welcome back</h2>
+            <p id="auth-subtitle" class="auth-subtitle" data-en="Log in to access your farm dashboard." data-hi="अपने खेत डैशबोर्ड तक पहुंचने के लिए लॉग इन करें।">Log in to access your farm dashboard.</p>
             <form id="auth-form" onsubmit="submitAuth(event)">
                 <div id="register-fields" class="register-fields hidden">
-                    <label for="auth-name">Farmer name</label>
-                    <input id="auth-name" type="text" autocomplete="name" placeholder="Your name">
+                    <label for="auth-name" data-en="Farmer name" data-hi="किसान का नाम">Farmer name</label>
+                    <input id="auth-name" type="text" autocomplete="name" data-placeholder-en="Your name" data-placeholder-hi="अपना नाम" placeholder="Your name">
                     <div class="auth-location-grid">
-                        <div><label for="auth-latitude">Farm latitude</label><input id="auth-latitude" type="number" step="any" min="6" max="37.5" placeholder="Use GPS location"></div>
-                        <div><label for="auth-longitude">Farm longitude</label><input id="auth-longitude" type="number" step="any" min="68" max="98" placeholder="Use GPS location"></div>
+                        <div><label for="auth-latitude" data-en="Farm latitude" data-hi="खेत अक्षांश">Farm latitude</label><input id="auth-latitude" type="number" step="any" min="6" max="37.5" data-placeholder-en="Use GPS location" data-placeholder-hi="GPS स्थान उपयोग करें" placeholder="Use GPS location"></div>
+                        <div><label for="auth-longitude" data-en="Farm longitude" data-hi="खेत देशांतर">Farm longitude</label><input id="auth-longitude" type="number" step="any" min="68" max="98" data-placeholder-en="Use GPS location" data-placeholder-hi="GPS स्थान उपयोग करें" placeholder="Use GPS location"></div>
                     </div>
-                    <button class="btn-secondary" type="button" onclick="useSignupLocation()">Use my current location</button>
+                    <button class="btn-secondary" type="button" onclick="useSignupLocation()" data-en="Use my current location" data-hi="मेरा वर्तमान स्थान उपयोग करें">Use my current location</button>
                 </div>
-                <label for="auth-email">Email address</label>
-                <input id="auth-email" type="email" autocomplete="email" required placeholder="you@example.com">
-                <label for="auth-password">Password</label>
-                <input id="auth-password" type="password" autocomplete="current-password" minlength="6" required placeholder="At least 6 characters">
-                <button id="auth-submit" class="auth-submit" type="submit">Log in</button>
+                <label for="auth-email" data-en="Email address" data-hi="ईमेल पता">Email address</label>
+                <input id="auth-email" type="email" autocomplete="email" required data-placeholder-en="you@example.com" data-placeholder-hi="you@example.com" placeholder="you@example.com">
+                <label for="auth-password" data-en="Password" data-hi="पासवर्ड">Password</label>
+                <input id="auth-password" type="password" autocomplete="current-password" minlength="6" required data-placeholder-en="At least 6 characters" data-placeholder-hi="कम से कम 6 अक्षर" placeholder="At least 6 characters">
+                <button id="auth-submit" class="auth-submit" type="submit" data-en="Log in" data-hi="लॉग इन">Log in</button>
             </form>
             <p id="auth-message" class="auth-message" role="status"></p>
         </section>
     </main>
     <script>
         let authMode = 'login';
+        let authLang = localStorage.getItem('hackbhoomi-language') || 'en';
+        const authCopy = {
+            en: { loginTitle: 'Welcome back', registerTitle: 'Create your account', loginSubtitle: 'Log in to access your farm dashboard.', registerSubtitle: 'Your crop records will be saved to your Supabase account.', loginAction: 'Log in', registerAction: 'Create account', wait: 'Please wait...', checkEmail: 'Check your email to continue.' },
+            hi: { loginTitle: 'वापसी पर स्वागत है', registerTitle: 'अपना खाता बनाएं', loginSubtitle: 'अपने खेत डैशबोर्ड तक पहुंचने के लिए लॉग इन करें।', registerSubtitle: 'आपके फसल रिकॉर्ड आपके Supabase खाते में सुरक्षित होंगे।', loginAction: 'लॉग इन', registerAction: 'खाता बनाएं', wait: 'कृपया प्रतीक्षा करें...', checkEmail: 'जारी रखने के लिए अपना ईमेल देखें।' }
+        };
+        function setAuthLanguage(lang) {
+            authLang = lang;
+            localStorage.setItem('hackbhoomi-language', lang);
+            document.documentElement.lang = lang;
+            document.querySelectorAll('[data-en]').forEach(el => { const value = el.getAttribute(`data-${lang}`); if (value) el.textContent = value; });
+            document.querySelectorAll('[data-placeholder-en]').forEach(el => { el.placeholder = el.getAttribute(`data-placeholder-${lang}`) || el.placeholder; });
+            document.getElementById('auth-btn-en').classList.toggle('active', lang === 'en');
+            document.getElementById('auth-btn-hi').classList.toggle('active', lang === 'hi');
+            setAuthMode(authMode);
+        }
         function setAuthMode(mode) {
             authMode = mode;
             document.getElementById('login-tab').classList.toggle('active', mode === 'login');
             document.getElementById('register-tab').classList.toggle('active', mode === 'register');
-            document.getElementById('auth-title').innerText = mode === 'login' ? 'Welcome back' : 'Create your account';
-            document.getElementById('auth-subtitle').innerText = mode === 'login' ? 'Log in to access your farm dashboard.' : 'Your crop records will be saved to your Supabase account.';
-            document.getElementById('auth-submit').innerText = mode === 'login' ? 'Log in' : 'Create account';
+            document.getElementById('auth-title').innerText = mode === 'login' ? authCopy[authLang].loginTitle : authCopy[authLang].registerTitle;
+            document.getElementById('auth-subtitle').innerText = mode === 'login' ? authCopy[authLang].loginSubtitle : authCopy[authLang].registerSubtitle;
+            document.getElementById('auth-submit').innerText = mode === 'login' ? authCopy[authLang].loginAction : authCopy[authLang].registerAction;
             document.getElementById('auth-password').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
             document.getElementById('register-fields').classList.toggle('hidden', mode !== 'register');
             document.getElementById('auth-name').required = mode === 'register';
@@ -75,7 +94,7 @@
             const message = document.getElementById('auth-message');
             button.disabled = true;
             message.className = 'auth-message';
-            message.innerText = 'Please wait...';
+            message.innerText = authCopy[authLang].wait;
             try {
                 const response = await fetch(`/api/auth/${authMode}`, {
                     method: 'POST',
@@ -95,7 +114,7 @@
                     return;
                 }
                 message.className = 'auth-message success';
-                message.innerText = data.message || 'Check your email to continue.';
+                message.innerText = data.message || authCopy[authLang].checkEmail;
             } catch (error) {
                 message.className = 'auth-message error';
                 message.innerText = error.message;
@@ -103,6 +122,7 @@
                 button.disabled = false;
             }
         }
+        setAuthLanguage(authLang);
         function useSignupLocation() {
             if (!navigator.geolocation) return;
             navigator.geolocation.getCurrentPosition(position => {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HackBhoomi - Admin analysis</title>
+    <title data-en="HackBhoomi - Admin analysis" data-hi="हैकभूमि - व्यवस्थापक विश्लेषण">HackBhoomi - Admin analysis</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,0..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,74 +14,87 @@
     <aside class="sidebar admin-sidebar">
         <div class="brand">
             <h1 class="logo">HACKBHOOMI</h1>
-            <p class="tagline">Operations intelligence</p>
+            <p class="tagline" data-en="Operations intelligence" data-hi="संचालन जानकारी">Operations intelligence</p>
         </div>
         <div class="admin-rail-note">
-            <span class="admin-rail-kicker">ADMIN VIEW</span>
-            <strong>One field ledger,<br>one clear picture.</strong>
-            <p>Track adoption, crop activity, inventory risk, and farm economics from one place.</p>
+            <span class="admin-rail-kicker" data-en="ADMIN VIEW" data-hi="व्यवस्थापक दृश्य">ADMIN VIEW</span>
+            <strong data-en="One field ledger, one clear picture." data-hi="एक खेत खाता, पूरी स्पष्ट तस्वीर।">One field ledger,<br>one clear picture.</strong>
+            <p data-en="Track adoption, crop activity, inventory risk, and farm economics from one place." data-hi="एक ही जगह से उपयोग, फसल गतिविधि, भंडार जोखिम और खेती की अर्थव्यवस्था देखें।">Track adoption, crop activity, inventory risk, and farm economics from one place.</p>
         </div>
         <nav class="admin-nav">
-            <a class="nav-item active" href="/admin"><span class="icon">▦</span> Overview</a>
-            <a class="nav-item" href="/"><span class="icon">←</span> Farmer app</a>
+            <a class="nav-item active" href="/admin"><span class="icon">▦</span> <span data-en="Overview" data-hi="सारांश">Overview</span></a>
+            <a class="nav-item" href="/"><span class="icon">←</span> <span data-en="Farmer app" data-hi="किसान ऐप">Farmer app</span></a>
         </nav>
         <div class="sidebar-footer">
-            <button class="admin-refresh-link" type="button" onclick="loadAdminOverview()">↻ Refresh data</button>
-            <button class="admin-logout" type="button" onclick="logoutAdmin()">Sign out</button>
+            <div class="lang-switch">
+                <button id="admin-btn-en" class="btn-lang active" type="button" onclick="setAdminLanguage('en')">English</button>
+                <button id="admin-btn-hi" class="btn-lang" type="button" onclick="setAdminLanguage('hi')">हिंदी</button>
+            </div>
+            <button class="admin-refresh-link" type="button" onclick="loadAdminOverview()">↻ <span data-en="Refresh data" data-hi="डेटा रीफ्रेश करें">Refresh data</span></button>
+            <button class="admin-logout" type="button" onclick="logoutAdmin()" data-en="Sign out" data-hi="साइन आउट">Sign out</button>
         </div>
     </aside>
 
     <main class="main-content admin-main">
         <header class="admin-header">
             <div>
-                <p class="eyebrow">FIELD OPERATIONS / LIVE VIEW</p>
-                <h2 class="page-title">Farm network analysis</h2>
-                <p class="subtitle">A high-level read on the farmers, crops, inventory, and economics flowing through HackBhoomi.</p>
+                <p class="eyebrow" data-en="FIELD OPERATIONS / LIVE VIEW" data-hi="खेत संचालन / लाइव दृश्य">FIELD OPERATIONS / LIVE VIEW</p>
+                <h2 class="page-title" data-en="Farm network analysis" data-hi="खेत नेटवर्क विश्लेषण">Farm network analysis</h2>
+                <p class="subtitle" data-en="A high-level read on the farmers, crops, inventory, and economics flowing through HackBhoomi." data-hi="हैकभूमि से जुड़े किसानों, फसलों, भंडार और अर्थव्यवस्था की उच्च-स्तरीय जानकारी।">A high-level read on the farmers, crops, inventory, and economics flowing through HackBhoomi.</p>
             </div>
             <div class="admin-header-meta">
-                <span class="admin-live-dot"><i></i> Protected admin view</span>
-                <span id="admin-refreshed-at">Loading snapshot...</span>
+                <span class="admin-live-dot"><i></i> <span data-en="Protected admin view" data-hi="सुरक्षित व्यवस्थापक दृश्य">Protected admin view</span></span>
+                <span id="admin-refreshed-at" data-en="Loading snapshot..." data-hi="स्नैपशॉट लोड हो रहा है...">Loading snapshot...</span>
             </div>
         </header>
 
         <section id="admin-error" class="admin-error hidden" role="alert"></section>
 
         <section class="admin-kpi-grid" aria-label="Network summary">
-            <article class="admin-kpi kpi-forest"><span>Registered farmers</span><strong id="kpi-farmers">—</strong><small id="kpi-profiles">profiles with farm records</small></article>
-            <article class="admin-kpi kpi-gold"><span>Crop batches</span><strong id="kpi-batches">—</strong><small><b id="kpi-active">—</b> active · <b id="kpi-sold">—</b> sold</small></article>
-            <article class="admin-kpi kpi-sage"><span>Produce in ledger</span><strong id="kpi-quantity">—</strong><small>kilograms recorded across batches</small></article>
-            <article class="admin-kpi kpi-ink"><span>High risk batches</span><strong id="kpi-risk">—</strong><small>need attention in storage or handling</small></article>
+            <article class="admin-kpi kpi-forest"><span data-en="Registered farmers" data-hi="पंजीकृत किसान">Registered farmers</span><strong id="kpi-farmers">—</strong><small id="kpi-profiles" data-en="profiles with farm records" data-hi="खेत रिकॉर्ड वाले प्रोफाइल">profiles with farm records</small></article>
+            <article class="admin-kpi kpi-gold"><span data-en="Crop batches" data-hi="फसल बैच">Crop batches</span><strong id="kpi-batches">—</strong><small><b id="kpi-active">—</b> <span data-en="active" data-hi="सक्रिय">active</span> · <b id="kpi-sold">—</b> <span data-en="sold" data-hi="बिके हुए">sold</span></small></article>
+            <article class="admin-kpi kpi-sage"><span data-en="Produce in ledger" data-hi="खाते में उपज">Produce in ledger</span><strong id="kpi-quantity">—</strong><small data-en="kilograms recorded across batches" data-hi="बैचों में दर्ज किलोग्राम">kilograms recorded across batches</small></article>
+            <article class="admin-kpi kpi-ink"><span data-en="High risk batches" data-hi="उच्च जोखिम बैच">High risk batches</span><strong id="kpi-risk">—</strong><small data-en="need attention in storage or handling" data-hi="भंडारण या संभाल में ध्यान चाहिए">need attention in storage or handling</small></article>
         </section>
 
         <section class="admin-insight-strip">
-            <div><span class="admin-strip-label">Recorded revenue</span><strong id="kpi-revenue">₹ —</strong></div>
-            <div><span class="admin-strip-label">Recorded net profit</span><strong id="kpi-profit">₹ —</strong></div>
-            <div><span class="admin-strip-label">Production cost</span><strong id="kpi-cost">₹ —</strong></div>
-            <div><span class="admin-strip-label">Profit margin on revenue</span><strong id="kpi-margin">—</strong></div>
+            <div><span class="admin-strip-label" data-en="Recorded revenue" data-hi="दर्ज आय">Recorded revenue</span><strong id="kpi-revenue">₹ —</strong></div>
+            <div><span class="admin-strip-label" data-en="Recorded net profit" data-hi="दर्ज शुद्ध लाभ">Recorded net profit</span><strong id="kpi-profit">₹ —</strong></div>
+            <div><span class="admin-strip-label" data-en="Production cost" data-hi="उत्पादन लागत">Production cost</span><strong id="kpi-cost">₹ —</strong></div>
+            <div><span class="admin-strip-label" data-en="Profit margin on revenue" data-hi="आय पर लाभ मार्जिन">Profit margin on revenue</span><strong id="kpi-margin">—</strong></div>
+        </section>
+
+        <section class="admin-tools analysis-panel">
+            <div><span class="eyebrow" data-en="CONTROL ROOM" data-hi="नियंत्रण कक्ष">CONTROL ROOM</span><h3 data-en="Operational tools" data-hi="संचालन उपकरण">Operational tools</h3></div>
+            <div class="admin-tool-actions">
+                <button class="btn-secondary" type="button" onclick="exportAdminCsv()" data-en="↓ Export farmer report" data-hi="↓ किसान रिपोर्ट निर्यात करें">↓ Export farmer report</button>
+                <label class="admin-check"><input id="risk-only" type="checkbox" onchange="renderAdminDashboard(adminData)"> <span data-en="Show high-risk activity only" data-hi="केवल उच्च जोखिम गतिविधि दिखाएं">Show high-risk activity only</span></label>
+                <span id="admin-health" class="admin-health" data-en="System check pending" data-hi="सिस्टम जांच लंबित">System check pending</span>
+            </div>
         </section>
 
         <section class="admin-analysis-grid">
             <article class="analysis-panel crop-analysis-panel">
-                <div class="analysis-panel-head"><div><span class="eyebrow">WHAT IS MOVING</span><h3>Crop mix</h3></div><span class="panel-note">by batch count</span></div>
+                <div class="analysis-panel-head"><div><span class="eyebrow" data-en="WHAT IS MOVING" data-hi="क्या चल रहा है">WHAT IS MOVING</span><h3 data-en="Crop mix" data-hi="फसल मिश्रण">Crop mix</h3></div><span class="panel-note" data-en="by batch count" data-hi="बैच संख्या के अनुसार">by batch count</span></div>
                 <div id="crop-mix-chart" class="bar-chart"></div>
             </article>
             <article class="analysis-panel">
-                <div class="analysis-panel-head"><div><span class="eyebrow">WHERE IT IS HAPPENING</span><h3>Farm locations</h3></div><span class="panel-note">by crop batch</span></div>
+                <div class="analysis-panel-head"><div><span class="eyebrow" data-en="WHERE IT IS HAPPENING" data-hi="कहां हो रहा है">WHERE IT IS HAPPENING</span><h3 data-en="Farm locations" data-hi="खेत स्थान">Farm locations</h3></div><span class="panel-note" data-en="by crop batch" data-hi="फसल बैच के अनुसार">by crop batch</span></div>
                 <div id="state-mix-chart" class="bar-chart"></div>
             </article>
             <article class="analysis-panel risk-analysis-panel">
-                <div class="analysis-panel-head"><div><span class="eyebrow">WHAT NEEDS CARE</span><h3>Quality risk</h3></div><span class="panel-note">current flags</span></div>
+                <div class="analysis-panel-head"><div><span class="eyebrow" data-en="WHAT NEEDS CARE" data-hi="किसे ध्यान चाहिए">WHAT NEEDS CARE</span><h3 data-en="Quality risk" data-hi="गुणवत्ता जोखिम">Quality risk</h3></div><span class="panel-note" data-en="current flags" data-hi="वर्तमान संकेत">current flags</span></div>
                 <div id="risk-mix-chart" class="risk-chart"></div>
             </article>
         </section>
 
         <section class="admin-content-grid">
             <article class="analysis-panel farmer-panel">
-                <div class="analysis-panel-head table-head"><div><span class="eyebrow">FARMER NETWORK</span><h3>Farmer performance</h3></div><input id="farmer-filter" class="admin-filter" type="search" placeholder="Search farmer or location" oninput="filterFarmers()"></div>
-                <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Farmer</th><th>Location</th><th>Batches</th><th>Active kg</th><th>Revenue</th><th>Profit</th></tr></thead><tbody id="farmers-table"></tbody></table></div>
+                <div class="analysis-panel-head table-head"><div><span class="eyebrow" data-en="FARMER NETWORK" data-hi="किसान नेटवर्क">FARMER NETWORK</span><h3 data-en="Farmer performance" data-hi="किसान प्रदर्शन">Farmer performance</h3></div><input id="farmer-filter" class="admin-filter" type="search" data-placeholder-en="Search farmer or location" data-placeholder-hi="किसान या स्थान खोजें" placeholder="Search farmer or location" oninput="filterFarmers()"></div>
+                <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th data-en="Farmer" data-hi="किसान">Farmer</th><th data-en="Location" data-hi="स्थान">Location</th><th data-en="Batches" data-hi="बैच">Batches</th><th data-en="Active kg" data-hi="सक्रिय किलो">Active kg</th><th data-en="Revenue" data-hi="आय">Revenue</th><th data-en="Profit" data-hi="लाभ">Profit</th></tr></thead><tbody id="farmers-table"></tbody></table></div>
             </article>
             <article class="analysis-panel activity-panel">
-                <div class="analysis-panel-head"><div><span class="eyebrow">LATEST SIGNALS</span><h3>Recent crop activity</h3></div></div>
+                <div class="analysis-panel-head"><div><span class="eyebrow" data-en="LATEST SIGNALS" data-hi="नवीनतम संकेत">LATEST SIGNALS</span><h3 data-en="Recent crop activity" data-hi="हाल की फसल गतिविधि">Recent crop activity</h3></div></div>
                 <div id="recent-activity" class="activity-list"></div>
             </article>
         </section>
