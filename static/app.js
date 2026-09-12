@@ -2,6 +2,7 @@ let currentLang = localStorage.getItem('hackbhoomi-language') || 'en';
 let produceBatches = [];
 let mandiRecordsCache = [];
 let selectedImageBase64 = null;
+let selectedImagesBase64 = [];
 let chatImageBase64 = null;
 let isLiveVoiceActive = false;
 let isRecognizing = false;
@@ -166,6 +167,7 @@ function openProfile() {
     document.getElementById("profile-latitude").value = farmerProfile?.latitude ?? "";
     document.getElementById("profile-longitude").value = farmerProfile?.longitude ?? "";
     document.getElementById("profile-location-name").value = farmerProfile?.location_name || "";
+    document.getElementById("profile-alert-phone").value = farmerProfile?.alert_phone || "";
     modal.classList.remove("hidden");
     document.body.style.overflow = "hidden";
 }
@@ -199,7 +201,8 @@ async function saveProfile(event) {
         full_name: document.getElementById("profile-name").value.trim(),
         latitude: document.getElementById("profile-latitude").value,
         longitude: document.getElementById("profile-longitude").value,
-        location_name: document.getElementById("profile-location-name").value.trim()
+        location_name: document.getElementById("profile-location-name").value.trim(),
+        alert_phone: document.getElementById("profile-alert-phone").value.trim()
     };
 
     try {
@@ -751,6 +754,7 @@ function renderStoredProduce() {
                 <strong>💡 ${t('storage')}:</strong> ${b.recommendation}<br>
                 <strong>⚙️ ${t('processing')}:</strong> ${b.processing_idea}
             </div>
+            ${b.spoilage_risk === 'High' || b.spoilage_risk === 'Medium' ? `<div class="alert-actions"><strong>⚠️ ${currentLang === 'hi' ? 'स्वचालित खराबी चेतावनी' : 'Spoilage alert'}</strong><button type="button" class="btn-small-neutral" onclick="sendSpoilageAlert('${b.id}', 'sms')">SMS</button><button type="button" class="btn-small-neutral" onclick="sendSpoilageAlert('${b.id}', 'whatsapp')">WhatsApp</button></div>` : ''}
             ${nextCropHtml}
             <div>
                 <button type="button" class="btn-secondary" onclick="openSettlementForBatch('${b.id}')">
@@ -951,28 +955,32 @@ function addCustomSellingCost() {
 }
 
 function handleImageSelected(e) {
-    const file = e.target.files && e.target.files[0];
-    if (file) {
+    const files = Array.from(e.target.files || []).slice(0, 6);
+    if (!files.length) return;
+    Promise.all(files.map(file => new Promise(resolve => {
         const reader = new FileReader();
-        reader.onload = function(evt) {
-            selectedImageBase64 = evt.target.result;
-            const preview = document.getElementById("preview-img");
-            const wrapper = document.getElementById("image-preview-wrapper");
-            if (preview) preview.src = selectedImageBase64;
-            if (wrapper) wrapper.classList.remove("hidden");
-        };
+        reader.onload = event => resolve(event.target.result);
+        reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
-    }
+    }))).then(images => {
+        selectedImagesBase64 = images.filter(Boolean);
+        selectedImageBase64 = selectedImagesBase64[0] || null;
+        const gallery = document.getElementById("image-preview-gallery");
+        const wrapper = document.getElementById("image-preview-wrapper");
+        if (gallery) gallery.innerHTML = selectedImagesBase64.map(image => `<img src="${image}" alt="Crop angle preview">`).join('');
+        if (wrapper) wrapper.classList.toggle("hidden", !selectedImagesBase64.length);
+    });
 }
 
 function removeImage() {
     selectedImageBase64 = null;
+    selectedImagesBase64 = [];
     const input = document.getElementById("crop_image");
     const wrapper = document.getElementById("image-preview-wrapper");
-    const preview = document.getElementById("preview-img");
+    const gallery = document.getElementById("image-preview-gallery");
     if (input) input.value = "";
     if (wrapper) wrapper.classList.add("hidden");
-    if (preview) preview.src = "";
+    if (gallery) gallery.innerHTML = "";
 }
 
 function triggerFileInput() {
@@ -1028,6 +1036,7 @@ async function handleProduceSubmit(e) {
         planting_date: plantingDateInput?.value || null,
         storage_type: storageTypeInput.value,
         image_base64: selectedImageBase64,
+        image_base64s: selectedImagesBase64,
         production_costs: prodCosts
     };
 
@@ -1045,6 +1054,9 @@ async function handleProduceSubmit(e) {
             document.getElementById("produce-form").reset();
             removeImage();
             showToast(translations[currentLang].toastSaved, "success");
+            if (result.batch.spoilage_risk === "High" || result.batch.spoilage_risk === "Medium") {
+                sendSpoilageAlert(result.batch.id, "sms", true);
+            }
             switchTab('ledger-stored');
         } else {
             showToast(result.error || "Could not save this crop.", "error");
@@ -1607,4 +1619,19 @@ function toggleSellDecisionMode() {
     const batchChoice = document.querySelector('.sell-batch-choice');
     if (batchChoice) batchChoice.classList.toggle('hidden', mode !== 'batch');
     document.querySelectorAll('.sell-mode-option').forEach(option => option.classList.toggle('active', option.querySelector('input')?.value === mode));
+}
+
+async function sendSpoilageAlert(batchId, channel = 'sms', automatic = false) {
+    const key = `hackbhoomi-alert-${batchId}-${channel}`;
+    if (automatic && localStorage.getItem(key)) return;
+    try {
+        const response = await fetch('/api/alerts/spoilage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_id: batchId, channel }) });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Alert could not be sent.');
+        localStorage.setItem(key, '1');
+        if (!automatic) showToast(data.message, 'success');
+    } catch (error) {
+        if (!automatic) showToast(error.message, 'error');
+        else console.warn('Automatic spoilage alert skipped:', error.message);
+    }
 }

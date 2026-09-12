@@ -495,9 +495,10 @@
 
                     <div class="form-group photo-upload-box">
                         <label data-en="Crop Photo (Gemini Multimodal Quality Detection)" data-hi="फसल फोटो (जेमिनी एआई विज़न गुणवत्ता जांच)">Crop Photo (Gemini Multimodal Quality Detection)</label>
-                        <input type="file" id="crop_image" accept="image/*" onchange="handleImageSelected(event)">
+                        <label data-en="Crop photos (select multiple angles)" data-hi="फसल की तस्वीरें (कई कोण चुनें)">Crop photos (select multiple angles)</label>
+                        <input type="file" id="crop_image" accept="image/*" multiple onchange="handleImageSelected(event)">
                         <div id="image-preview-wrapper" class="image-preview-wrapper hidden">
-                            <img id="preview-img" src="" alt="Crop Scan">
+                            <div id="image-preview-gallery" class="image-preview-gallery"></div>
                             <div class="preview-actions">
                                 <button type="button" class="btn-small-danger" onclick="removeImage()">🗑️ <span data-en="Delete Photo" data-hi="फोटो हटाएं">Delete Photo</span></button>
                                 <button type="button" class="btn-small-neutral" onclick="triggerFileInput()">🔄 <span data-en="Replace Photo" data-hi="फोटो बदलें">Replace Photo</span></button>
@@ -536,6 +537,7 @@
                 <label for="profile-name">Farmer name</label><input id="profile-name" type="text" required>
                 <div class="auth-location-grid"><div><label for="profile-latitude">Latitude</label><input id="profile-latitude" type="number" step="any" min="6" max="37.5" required></div><div><label for="profile-longitude">Longitude</label><input id="profile-longitude" type="number" step="any" min="68" max="98" required></div></div>
                 <label for="profile-location-name">Location label</label><input id="profile-location-name" type="text" placeholder="Village / district name">
+                <label for="profile-alert-phone">Alert phone with country code</label><input id="profile-alert-phone" type="tel" placeholder="+91XXXXXXXXXX">
                 <div class="profile-actions"><button class="btn-secondary" type="button" onclick="useProfileLocation()">Use my location</button><button class="auth-submit" type="submit">Save profile</button></div>
             </form>
             <div class="profile-danger"><button class="btn-delete-data" onclick="deleteAllProduce()" type="button">Delete my crop data</button><button class="btn-logout" onclick="logout()" type="button">Log out</button></div>

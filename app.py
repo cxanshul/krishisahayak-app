@@ -58,6 +58,10 @@ ADMIN_EMAILS = {
 
 ACCUWEATHER_API_KEY = env_value("ACCUWEATHER_API_KEY")
 TOMTOM_API_KEY = env_value("TOMTOM_API_KEY")
+TWILIO_ACCOUNT_SID = env_value("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = env_value("TWILIO_AUTH_TOKEN")
+TWILIO_SMS_FROM = env_value("TWILIO_SMS_FROM")
+TWILIO_WHATSAPP_FROM = env_value("TWILIO_WHATSAPP_FROM")
 ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
@@ -192,6 +196,11 @@ def decode_image(image_base64):
         print(f"Image decode error: {e}")
         return None
 
+def decode_images(image_base64s):
+    if not isinstance(image_base64s, list):
+        return []
+    return [image for image in (decode_image(value) for value in image_base64s[:6]) if image]
+
 def fallback_next_crop_plan(crop_name):
     return [
         {
@@ -316,7 +325,7 @@ def user_batches(user_id):
     return [batch for batch in DATA_STORE if batch.get("farmer_id") == user_id]
 
 def default_profile(user):
-    return {"farmer_id": user["id"], "full_name": "", "latitude": None, "longitude": None, "location_name": ""}
+    return {"farmer_id": user["id"], "full_name": "", "latitude": None, "longitude": None, "location_name": "", "alert_phone": ""}
 
 def load_profile(user):
     profile = default_profile(user)
@@ -504,7 +513,10 @@ def profile():
     if not (INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"] and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]):
         return jsonify({"success": False, "error": "Farm coordinates must be within India."}), 400
     location_name = str(data.get("location_name", "")).strip()
-    updated = {"farmer_id": user["id"], "full_name": full_name, "latitude": latitude, "longitude": longitude, "location_name": location_name, "updated_at": datetime.utcnow().isoformat()}
+    alert_phone = str(data.get("alert_phone", "")).strip()
+    if alert_phone and not alert_phone.startswith("+"):
+        return jsonify({"success": False, "error": "Alert phone must include the country code, for example +91XXXXXXXXXX."}), 400
+    updated = {"farmer_id": user["id"], "full_name": full_name, "latitude": latitude, "longitude": longitude, "location_name": location_name, "alert_phone": alert_phone, "updated_at": datetime.utcnow().isoformat()}
     if supabase:
         try:
             result = supabase.table("farmer_profiles").upsert(updated).execute()
@@ -515,6 +527,45 @@ def profile():
         profile_data = updated
     session["user"]["full_name"] = full_name
     return jsonify({"success": True, "profile": profile_data})
+
+@app.route("/api/alerts/spoilage", methods=["POST"])
+@require_auth
+def send_spoilage_alert():
+    data = request.json or {}
+    batch_id = str(data.get("batch_id", "")).strip()
+    channel = str(data.get("channel", "sms")).lower()
+    if channel not in {"sms", "whatsapp"}:
+        return jsonify({"success": False, "error": "Choose SMS or WhatsApp."}), 400
+    user = current_user()
+    batch = next((item for item in user_batches(user["id"]) if str(item.get("id")) == batch_id), None)
+    if not batch:
+        return jsonify({"success": False, "error": "Crop batch not found."}), 404
+    if batch.get("spoilage_risk") not in {"High", "Medium"}:
+        return jsonify({"success": False, "error": "This batch does not currently need a spoilage alert."}), 400
+    profile_data = load_profile(user)
+    phone = str(profile_data.get("alert_phone") or batch.get("farmer_phone") or "").strip()
+    if not phone or phone == "9876543210":
+        return jsonify({"success": False, "error": "Add a phone number with country code in your Profile first."}), 400
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        return jsonify({"success": False, "configured": False, "error": "SMS/WhatsApp alerts are not configured on the server yet."}), 503
+    sender = TWILIO_WHATSAPP_FROM if channel == "whatsapp" else TWILIO_SMS_FROM
+    if not sender:
+        return jsonify({"success": False, "configured": False, "error": f"Twilio {channel} sender is not configured."}), 503
+    destination = f"whatsapp:{phone}" if channel == "whatsapp" else phone
+    sender_value = sender if channel != "whatsapp" or sender.startswith("whatsapp:") else f"whatsapp:{sender}"
+    message = f"HackBhoomi alert: {batch.get('crop_name', 'Your crop')} has {batch.get('spoilage_risk')} spoilage risk and about {batch.get('shelf_life_days', 'limited')} days of shelf life left. Check storage and selling options today."
+    try:
+        response = requests.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json",
+            auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
+            data={"From": sender_value, "To": destination, "Body": message},
+            timeout=12
+        )
+        response.raise_for_status()
+        return jsonify({"success": True, "channel": channel, "message": f"{channel.title()} alert sent."})
+    except requests.RequestException as error:
+        app.logger.warning("Spoilage alert delivery failed: %s", error)
+        return jsonify({"success": False, "error": "The alert provider could not deliver this message."}), 502
 
 def accuweather_time(value):
     if not value:
@@ -942,6 +993,7 @@ def analyze_and_add_produce():
         planting_date = data.get("planting_date") or None
         storage_type = data.get("storage_type", "Ventilated Godown")
         image_base64 = data.get("image_base64")
+        image_base64s = data.get("image_base64s") or ([image_base64] if image_base64 else [])
         costs = data.get("production_costs", {})
         production_cost = sum(safe_float(v) for v in costs.values())
 
@@ -977,9 +1029,7 @@ Respond strictly in valid JSON:
 For a growing crop, suggest a harvest date based on the crop, variety, planting date, and visible maturity. For a harvested crop, use the supplied harvest date.
 """
             contents = [prompt]
-            img = decode_image(image_base64)
-            if img:
-                contents.append(img)
+            contents.extend(decode_images(image_base64s))
             ai_text = None
             try:
                 if gemini_client:

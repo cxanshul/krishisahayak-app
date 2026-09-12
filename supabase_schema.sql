@@ -54,8 +54,10 @@ CREATE TABLE IF NOT EXISTS farmer_profiles (
     latitude NUMERIC,
     longitude NUMERIC,
     location_name TEXT DEFAULT '',
+    alert_phone TEXT DEFAULT '',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS farmer_profiles_farmer_id_idx ON farmer_profiles (farmer_id);
+ALTER TABLE farmer_profiles ADD COLUMN IF NOT EXISTS alert_phone TEXT DEFAULT '';
 

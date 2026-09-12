@@ -1581,6 +1581,9 @@ html::before {
 }
 
 .sell-decision-panel { border-top: 4px solid var(--turmeric); }
+.image-preview-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+.image-preview-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--border-ledger); }
+.alert-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0; color: var(--risk-red); font-size: 12px; }
 .sell-decision-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 18px; }
 .sell-mode-option { border: 1px solid var(--border-ledger); background: #fff; padding: 12px 14px; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: 600; }
 .sell-mode-option input { margin-right: 8px; accent-color: var(--leaf-green); }
