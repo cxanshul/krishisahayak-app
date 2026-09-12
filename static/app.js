@@ -389,6 +389,7 @@ async function loadBatches() {
 function renderAllViews() {
     renderStoredProduce();
     populateSettlementDropdown();
+    populateSellDecisionBatches();
     renderHistoryProduce();
     updateTallyStrip();
 }
@@ -573,6 +574,41 @@ function prefillSellDecision() {
     const matchingBatch = produceBatches.find(batch => batch.status === 'active' && String(batch.crop_name).toLowerCase().includes(String(crop).toLowerCase()));
     const quantity = document.getElementById('sell-decision-quantity');
     if (matchingBatch && quantity) quantity.value = matchingBatch.quantity_kg || 1000;
+}
+
+function populateSellDecisionBatches() {
+    const select = document.getElementById('sell-decision-batch');
+    if (!select) return;
+    const selectedValue = select.value;
+    const activeBatches = produceBatches.filter(batch => batch.status === 'active');
+    select.innerHTML = `<option value="">${currentLang === 'hi' ? 'बैच चुनें या नीचे जानकारी भरें' : 'Choose a batch or enter details below'}</option>`;
+    activeBatches.forEach(batch => {
+        const option = document.createElement('option');
+        option.value = batch.id;
+        option.textContent = `${batch.crop_name} · ${Number(batch.quantity_kg || 0).toLocaleString()} kg · ${batch.field_name || (currentLang === 'hi' ? 'खेत स्थान नहीं' : 'field not named')}`;
+        select.appendChild(option);
+    });
+    if (activeBatches.some(batch => String(batch.id) === String(selectedValue))) select.value = selectedValue;
+}
+
+function selectSellDecisionBatch() {
+    const batchId = document.getElementById('sell-decision-batch')?.value;
+    const batch = produceBatches.find(item => String(item.id) === String(batchId));
+    if (!batch) return;
+    const cropSelect = document.getElementById('sell-decision-crop');
+    const cropName = String(batch.crop_name || 'Wheat');
+    if (cropSelect && !Array.from(cropSelect.options).some(option => option.value.toLowerCase() === cropName.toLowerCase())) {
+        cropSelect.add(new Option(cropName, cropName));
+    }
+    if (cropSelect) cropSelect.value = cropName;
+    const quantity = document.getElementById('sell-decision-quantity');
+    if (quantity) quantity.value = batch.quantity_kg || 1000;
+    const storageSelect = document.getElementById('sell-decision-storage');
+    if (storageSelect) {
+        const storage = String(batch.storage_type || '').toLowerCase();
+        storageSelect.value = storage.includes('cold') ? 'cold' : storage.includes('godown') ? 'godown' : storage.includes('farm') ? 'farm' : 'none';
+        updateSellStorageCost();
+    }
 }
 
 function updateSellStorageCost() {
