@@ -1584,6 +1584,10 @@ html::before {
 .image-preview-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
 .image-preview-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--border-ledger); }
 .alert-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0; color: var(--risk-red); font-size: 12px; }
+.alert-verification-card { width: min(460px, 100%); }
+.alert-verification-card > button { margin-top: 14px; }
+.alert-verification-card label { display: block; margin-top: 14px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.alert-verification-card input { width: 100%; margin-top: 6px; padding: 11px 12px; border: 1px solid var(--border-ledger); font: 16px var(--font-sans); letter-spacing: 3px; }
 .sell-decision-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 18px; }
 .sell-mode-option { border: 1px solid var(--border-ledger); background: #fff; padding: 12px 14px; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: 600; }
 .sell-mode-option input { margin-right: 8px; accent-color: var(--leaf-green); }

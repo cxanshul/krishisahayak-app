@@ -1,8 +1,10 @@
 import os
 import json
 import base64
+import hashlib
 import requests
 import uuid
+import secrets
 from functools import wraps
 from io import BytesIO
 from datetime import datetime, date
@@ -62,6 +64,9 @@ TWILIO_ACCOUNT_SID = env_value("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = env_value("TWILIO_AUTH_TOKEN")
 TWILIO_SMS_FROM = env_value("TWILIO_SMS_FROM")
 TWILIO_WHATSAPP_FROM = env_value("TWILIO_WHATSAPP_FROM")
+TWILIO_WHATSAPP_OTP_CONTENT_SID = env_value("TWILIO_WHATSAPP_OTP_CONTENT_SID")
+TWILIO_WHATSAPP_ALERT_CONTENT_SID = env_value("TWILIO_WHATSAPP_ALERT_CONTENT_SID")
+OTP_TTL_SECONDS = 300
 ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
@@ -546,6 +551,9 @@ def send_spoilage_alert():
     phone = str(profile_data.get("alert_phone") or batch.get("farmer_phone") or "").strip()
     if not phone or phone == "9876543210":
         return jsonify({"success": False, "error": "Add a phone number with country code in your Profile first."}), 400
+    verified_phone = session.get("verified_alert_phone")
+    if verified_phone != phone:
+        return jsonify({"success": False, "error": "Verify this phone number with OTP before sending an alert.", "requires_verification": True}), 403
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
         return jsonify({"success": False, "configured": False, "error": "SMS/WhatsApp alerts are not configured on the server yet."}), 503
     sender = TWILIO_WHATSAPP_FROM if channel == "whatsapp" else TWILIO_SMS_FROM
@@ -555,10 +563,15 @@ def send_spoilage_alert():
     sender_value = sender if channel != "whatsapp" or sender.startswith("whatsapp:") else f"whatsapp:{sender}"
     message = f"HackBhoomi alert: {batch.get('crop_name', 'Your crop')} has {batch.get('spoilage_risk')} spoilage risk and about {batch.get('shelf_life_days', 'limited')} days of shelf life left. Check storage and selling options today."
     try:
+        payload = {"From": sender_value, "To": destination, "Body": message}
+        if channel == "whatsapp" and TWILIO_WHATSAPP_ALERT_CONTENT_SID:
+            payload["ContentSid"] = TWILIO_WHATSAPP_ALERT_CONTENT_SID
+            payload["ContentVariables"] = json.dumps({"1": batch.get("crop_name", "Your crop"), "2": str(batch.get("shelf_life_days", "limited"))})
+            payload.pop("Body", None)
         response = requests.post(
             f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json",
             auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
-            data={"From": sender_value, "To": destination, "Body": message},
+            data=payload,
             timeout=12
         )
         response.raise_for_status()
@@ -566,6 +579,76 @@ def send_spoilage_alert():
     except requests.RequestException as error:
         app.logger.warning("Spoilage alert delivery failed: %s", error)
         return jsonify({"success": False, "error": "The alert provider could not deliver this message."}), 502
+
+def send_twilio_message(phone, channel, message, content_sid=None, content_variables=None):
+    sender = TWILIO_WHATSAPP_FROM if channel == "whatsapp" else TWILIO_SMS_FROM
+    if not sender:
+        return False, f"Twilio {channel} sender is not configured."
+    destination = f"whatsapp:{phone}" if channel == "whatsapp" else phone
+    sender_value = sender if channel != "whatsapp" or sender.startswith("whatsapp:") else f"whatsapp:{sender}"
+    payload = {"From": sender_value, "To": destination, "Body": message}
+    if channel == "whatsapp" and content_sid:
+        payload["ContentSid"] = content_sid
+        payload["ContentVariables"] = json.dumps(content_variables or {})
+        payload.pop("Body", None)
+    response = requests.post(
+        f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json",
+        auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
+        data=payload,
+        timeout=12
+    )
+    response.raise_for_status()
+    return True, None
+
+@app.route("/api/alerts/request-otp", methods=["POST"])
+@require_auth
+def request_alert_otp():
+    data = request.json or {}
+    channel = str(data.get("channel", "sms")).lower()
+    if channel not in {"sms", "whatsapp"}:
+        return jsonify({"success": False, "error": "Choose SMS or WhatsApp."}), 400
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        return jsonify({"success": False, "error": "SMS/WhatsApp alerts are not configured on the server yet."}), 503
+    profile_data = load_profile(current_user())
+    phone = str(profile_data.get("alert_phone") or "").strip()
+    if not phone:
+        return jsonify({"success": False, "error": "Add a phone number with country code in your Profile first."}), 400
+    otp = f"{secrets.randbelow(1000000):06d}"
+    session["alert_otp"] = {"phone": phone, "hash": hashlib.sha256(otp.encode()).hexdigest(), "expires_at": time.time() + OTP_TTL_SECONDS, "attempts": 0}
+    try:
+        send_twilio_message(
+            phone,
+            channel,
+            f"HackBhoomi verification code: {otp}. It expires in 5 minutes. Do not share this code.",
+            TWILIO_WHATSAPP_OTP_CONTENT_SID if channel == "whatsapp" else None,
+            {"1": otp}
+        )
+        return jsonify({"success": True, "message": f"Verification code sent by {channel}."})
+    except requests.RequestException:
+        session.pop("alert_otp", None)
+        return jsonify({"success": False, "error": "The verification code could not be delivered."}), 502
+
+@app.route("/api/alerts/verify-otp", methods=["POST"])
+@require_auth
+def verify_alert_otp():
+    data = request.json or {}
+    otp = str(data.get("otp", "")).strip()
+    pending = session.get("alert_otp") or {}
+    profile_data = load_profile(current_user())
+    phone = str(profile_data.get("alert_phone") or "").strip()
+    if not pending or pending.get("phone") != phone or time.time() > pending.get("expires_at", 0):
+        session.pop("alert_otp", None)
+        return jsonify({"success": False, "error": "This OTP has expired. Request a new code."}), 400
+    if pending.get("attempts", 0) >= 5:
+        session.pop("alert_otp", None)
+        return jsonify({"success": False, "error": "Too many incorrect attempts. Request a new code."}), 429
+    pending["attempts"] = pending.get("attempts", 0) + 1
+    if not secrets.compare_digest(pending.get("hash", ""), hashlib.sha256(otp.encode()).hexdigest()):
+        session["alert_otp"] = pending
+        return jsonify({"success": False, "error": "Incorrect OTP."}), 400
+    session.pop("alert_otp", None)
+    session["verified_alert_phone"] = phone
+    return jsonify({"success": True, "message": "Phone verified. You can now send spoilage alerts."})
 
 def accuweather_time(value):
     if not value:

@@ -544,6 +544,17 @@
         </div>
     </div>
 
+    <div id="alert-verification-modal" class="profile-modal hidden" role="dialog" aria-modal="true" aria-labelledby="alert-verification-title">
+        <div class="profile-card alert-verification-card">
+            <div class="form-header"><div><h3 id="alert-verification-title" data-en="Verify alert phone" data-hi="अलर्ट फोन सत्यापित करें">Verify alert phone</h3><p class="subtitle" data-en="We will send a one-time code before any crop alert is delivered." data-hi="किसी भी फसल अलर्ट से पहले हम एक बार का कोड भेजेंगे।">We will send a one-time code before any crop alert is delivered.</p></div><button class="btn-close-profile" onclick="closeAlertVerification()" type="button">×</button></div>
+            <button id="request-alert-otp" class="btn-secondary" type="button" onclick="requestAlertOtp()" data-en="Send verification code" data-hi="सत्यापन कोड भेजें">Send verification code</button>
+            <label for="alert-otp-input" data-en="Enter 6-digit OTP" data-hi="6 अंकों का OTP दर्ज करें">Enter 6-digit OTP</label>
+            <input id="alert-otp-input" type="text" inputmode="numeric" maxlength="6" placeholder="123456">
+            <button class="auth-submit" type="button" onclick="verifyAlertOtp()" data-en="Verify and send alert" data-hi="सत्यापित करें और अलर्ट भेजें">Verify and send alert</button>
+            <p id="alert-verification-status" class="auth-message" role="status"></p>
+        </div>
+    </div>
+
     <!-- FLOATING AI ASSISTANT -->
     <div id="assistant-bubble" class="assistant-bubble" onclick="toggleAssistant()">
         💬 <span data-en="Ask Krishi AI" data-hi="कृषि AI से पूछें">Ask Krishi AI</span>

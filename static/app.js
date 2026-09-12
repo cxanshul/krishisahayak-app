@@ -3,6 +3,7 @@ let produceBatches = [];
 let mandiRecordsCache = [];
 let selectedImageBase64 = null;
 let selectedImagesBase64 = [];
+let pendingAlert = null;
 let chatImageBase64 = null;
 let isLiveVoiceActive = false;
 let isRecognizing = false;
@@ -1627,11 +1628,65 @@ async function sendSpoilageAlert(batchId, channel = 'sms', automatic = false) {
     try {
         const response = await fetch('/api/alerts/spoilage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_id: batchId, channel }) });
         const data = await response.json();
+        if (response.status === 403 && data.requires_verification && !automatic) {
+            openAlertVerification(batchId, channel);
+            return;
+        }
         if (!response.ok || !data.success) throw new Error(data.error || 'Alert could not be sent.');
         localStorage.setItem(key, '1');
         if (!automatic) showToast(data.message, 'success');
     } catch (error) {
         if (!automatic) showToast(error.message, 'error');
         else console.warn('Automatic spoilage alert skipped:', error.message);
+    }
+}
+
+function openAlertVerification(batchId, channel) {
+    pendingAlert = { batchId, channel };
+    const modal = document.getElementById('alert-verification-modal');
+    const status = document.getElementById('alert-verification-status');
+    if (status) status.textContent = currentLang === 'hi' ? 'पहले अपना फोन सत्यापित करें।' : `Verify your phone before sending the ${channel} alert.`;
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function closeAlertVerification() {
+    document.getElementById('alert-verification-modal')?.classList.add('hidden');
+    document.body.style.overflow = '';
+    pendingAlert = null;
+}
+
+async function requestAlertOtp() {
+    if (!pendingAlert) return;
+    const button = document.getElementById('request-alert-otp');
+    const status = document.getElementById('alert-verification-status');
+    if (button) button.disabled = true;
+    try {
+        const response = await fetch('/api/alerts/request-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: pendingAlert.channel }) });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'OTP could not be sent.');
+        if (status) status.textContent = data.message;
+    } catch (error) {
+        if (status) status.textContent = error.message;
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function verifyAlertOtp() {
+    if (!pendingAlert) return;
+    const status = document.getElementById('alert-verification-status');
+    const otp = document.getElementById('alert-otp-input')?.value.trim();
+    try {
+        const response = await fetch('/api/alerts/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otp }) });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'OTP verification failed.');
+        const alert = { ...pendingAlert };
+        closeAlertVerification();
+        await sendSpoilageAlert(alert.batchId, alert.channel);
+    } catch (error) {
+        if (status) status.textContent = error.message;
     }
 }
