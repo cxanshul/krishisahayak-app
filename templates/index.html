@@ -34,9 +34,6 @@
             <button class="nav-item" onclick="switchTab('sell-decision')">
                 <span class="icon">⚖️</span> <span data-en="Sell Now or Wait?" data-hi="अभी बेचें या रुकें?">Sell Now or Wait?</span>
             </button>
-            <button class="nav-item" onclick="switchTab('sell-batch')">
-                <span class="icon">📋</span> <span data-en="Select Active Batch" data-hi="सक्रिय बैच चुनें">Select Active Batch</span>
-            </button>
         </nav>
 
         <div class="nav-group-label">My Crops</div>
@@ -312,7 +309,12 @@
                         <p class="subtitle" data-en="Compare live mandi prices, dated market signals, weather, harvest volume, nearby mandis, and storage economics before selling." data-hi="बेचने से पहले लाइव मंडी भाव, बाजार संकेत, मौसम, उपज मात्रा, आसपास की मंडियों और भंडारण लागत की तुलना करें।">Compare live mandi prices, dated market signals, weather, harvest volume, nearby mandis, and storage economics before selling.</p>
                     </div>
                 </div>
+                <div class="sell-decision-mode" role="group" aria-label="Sell timing input method">
+                    <label class="sell-mode-option active"><input type="radio" name="sell-decision-mode" value="manual" checked onchange="toggleSellDecisionMode()"><span data-en="Enter details manually" data-hi="जानकारी खुद भरें">Enter details manually</span></label>
+                    <label class="sell-mode-option"><input type="radio" name="sell-decision-mode" value="batch" onchange="toggleSellDecisionMode()"><span data-en="Use an active batch" data-hi="सक्रिय बैच चुनें">Use an active batch</span></label>
+                </div>
                 <div class="form-grid sell-decision-inputs">
+                    <div class="form-group sell-batch-choice hidden"><label data-en="Select active batch" data-hi="सक्रिय बैच चुनें">Select active batch</label><select id="sell-decision-batch" onchange="selectSellDecisionBatch()"><option value="" data-en="Choose an active batch" data-hi="सक्रिय बैच चुनें">Choose an active batch</option></select></div>
                     <div class="form-group"><label data-en="Select crop" data-hi="फसल चुनें">Select crop</label><select id="sell-decision-crop" onchange="prefillSellDecision()"><option value="Wheat">Wheat (गेहूं)</option><option value="Potato">Potato (आलू)</option><option value="Tomato">Tomato (टमाटर)</option><option value="Mustard">Mustard (सरसों)</option><option value="Onion">Onion (प्याज)</option><option value="Soybean">Soybean (सोयाबीन)</option><option value="Cotton">Cotton (कपास)</option><option value="Maize">Maize (मक्का)</option></select></div>
                     <div class="form-group"><label data-en="Expected harvest volume (kg)" data-hi="अनुमानित उपज मात्रा (किलो)">Expected harvest volume (kg)</label><input id="sell-decision-quantity" type="number" min="1" step="any" value="1000"></div>
                     <div class="form-group"><label data-en="Storage option" data-hi="भंडारण विकल्प">Storage option</label><select id="sell-decision-storage" onchange="updateSellStorageCost()"><option value="none" data-en="Sell without storage" data-hi="बिना भंडारण बेचें">Sell without storage</option><option value="farm" data-en="Farm shade" data-hi="खेत की छाया">Farm shade</option><option value="godown" data-en="Godown / warehouse" data-hi="गोदाम / वेयरहाउस">Godown / warehouse</option><option value="cold" data-en="Cold storage" data-hi="कोल्ड स्टोरेज">Cold storage</option></select></div>
@@ -321,22 +323,6 @@
                 </div>
                 <button class="btn-primary-action" type="button" id="sell-decision-button" onclick="runSellDecision()" data-en="Analyze sell timing" data-hi="बिक्री का समय जांचें">Analyze sell timing</button>
                 <div id="sell-decision-result" class="sell-decision-result hidden"></div>
-            </div>
-        </div>
-
-        <div id="tab-sell-batch" class="tab-panel">
-            <div class="form-container sell-decision-panel">
-                <div class="form-header">
-                    <div>
-                        <h3 data-en="Select an Active Batch" data-hi="सक्रिय बैच चुनें">Select an Active Batch</h3>
-                        <p class="subtitle" data-en="Choose a stored crop batch to use its quantity, crop, and storage details in the sell timing analysis." data-hi="बिक्री समय विश्लेषण में मात्रा, फसल और भंडारण विवरण इस्तेमाल करने के लिए भंडारित फसल बैच चुनें।">Choose a stored crop batch to use its quantity, crop, and storage details in the sell timing analysis.</p>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label data-en="Active batch" data-hi="सक्रिय बैच">Active batch</label>
-                    <select id="sell-decision-batch" onchange="selectSellDecisionBatch()"><option value="" data-en="Choose an active batch" data-hi="सक्रिय बैच चुनें">Choose an active batch</option></select>
-                </div>
-                <button class="btn-primary-action" type="button" onclick="openSelectedSellBatch()" data-en="Continue to sell timing analysis" data-hi="बिक्री समय विश्लेषण पर जाएं">Continue to sell timing analysis</button>
             </div>
         </div>
 

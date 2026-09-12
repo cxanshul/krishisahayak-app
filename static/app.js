@@ -1601,3 +1601,10 @@ async function findNearestStorage() {
         }
     })();
 }
+
+function toggleSellDecisionMode() {
+    const mode = document.querySelector('input[name="sell-decision-mode"]:checked')?.value || 'manual';
+    const batchChoice = document.querySelector('.sell-batch-choice');
+    if (batchChoice) batchChoice.classList.toggle('hidden', mode !== 'batch');
+    document.querySelectorAll('.sell-mode-option').forEach(option => option.classList.toggle('active', option.querySelector('input')?.value === mode));
+}

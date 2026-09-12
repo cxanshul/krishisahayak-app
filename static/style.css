@@ -1581,6 +1581,11 @@ html::before {
 }
 
 .sell-decision-panel { border-top: 4px solid var(--turmeric); }
+.sell-decision-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 18px; }
+.sell-mode-option { border: 1px solid var(--border-ledger); background: #fff; padding: 12px 14px; color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: 600; }
+.sell-mode-option input { margin-right: 8px; accent-color: var(--leaf-green); }
+.sell-mode-option.active { border-color: var(--leaf-green); background: #f2f8ee; color: var(--leaf-green); }
+.sell-batch-choice.hidden { display: none; }
 .sell-decision-inputs { margin-top: 8px; }
 .sell-decision-result { margin-top: 20px; border: 1px solid var(--border-ledger); background: #fff; padding: 18px; }
 .sell-decision-result.hidden { display: none; }
