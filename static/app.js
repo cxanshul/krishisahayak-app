@@ -611,6 +611,16 @@ function selectSellDecisionBatch() {
     }
 }
 
+function openSelectedSellBatch() {
+    const batchId = document.getElementById('sell-decision-batch')?.value;
+    if (!batchId) {
+        showToast(currentLang === 'hi' ? 'पहले एक सक्रिय बैच चुनें।' : 'Choose an active batch first.', 'error');
+        return;
+    }
+    switchTab('sell-decision');
+    runSellDecision();
+}
+
 function updateSellStorageCost() {
     const storage = document.getElementById('sell-decision-storage')?.value;
     const cost = document.getElementById('sell-decision-storage-cost');
