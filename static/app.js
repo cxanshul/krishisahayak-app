@@ -50,7 +50,20 @@ const translations = {
         demoLoaded: "Tomato demo data loaded. Review it and register the crop for AI analysis.",
         noWeatherWarnings: "No rule-based weather warnings right now.",
         weatherUnavailable: "No real weather data is available for your location right now.",
-        weatherNeedsGps: "Weather requires your GPS location."
+        weatherNeedsGps: "Weather requires your GPS location.",
+        sellLoading: "⏳ Comparing market, weather, harvest, and storage signals...",
+        sellError: "Sell timing analysis could not be completed.",
+        sellNow: "Sell now",
+        wait: "Wait and monitor",
+        currentPrice: "Current avg price",
+        nearbyPrice: "Best nearby price",
+        trend: "Price trend",
+        storageCost: "Storage + risk cost",
+        volume: "Expected volume",
+        weatherRisk: "Weather risk",
+        available: "Available",
+        unavailable: "Unavailable",
+        records: "market records"
     },
     hi: {
         analyzing: "⏳ जेमिनी एआई द्वारा गुणवत्ता व सड़न जांच जारी है...",
@@ -89,7 +102,20 @@ const translations = {
         demoLoaded: "टमाटर डेमो डेटा लोड हो गया। समीक्षा करके एआई जांच के लिए फसल दर्ज करें।",
         noWeatherWarnings: "अभी कोई नियम-आधारित मौसम चेतावनी नहीं है।",
         weatherUnavailable: "इस समय आपके स्थान के लिए वास्तविक मौसम डेटा उपलब्ध नहीं है।",
-        weatherNeedsGps: "मौसम देखने के लिए GPS स्थान आवश्यक है।"
+        weatherNeedsGps: "मौसम देखने के लिए GPS स्थान आवश्यक है।",
+        sellLoading: "⏳ बाजार, मौसम, उपज और भंडारण संकेतों की तुलना हो रही है...",
+        sellError: "बिक्री समय विश्लेषण पूरा नहीं हो सका।",
+        sellNow: "अभी बेचें",
+        wait: "रुकें और निगरानी करें",
+        currentPrice: "वर्तमान औसत भाव",
+        nearbyPrice: "सबसे अच्छा आसपास का भाव",
+        trend: "भाव रुझान",
+        storageCost: "भंडारण + जोखिम लागत",
+        volume: "अनुमानित मात्रा",
+        weatherRisk: "मौसम जोखिम",
+        available: "उपलब्ध",
+        unavailable: "उपलब्ध नहीं",
+        records: "बाजार रिकॉर्ड"
     }
 };
 
@@ -540,6 +566,85 @@ function filterMandi() {
     });
 
     renderMandiTable(filtered);
+}
+
+function prefillSellDecision() {
+    const crop = document.getElementById('sell-decision-crop')?.value;
+    const matchingBatch = produceBatches.find(batch => batch.status === 'active' && String(batch.crop_name).toLowerCase().includes(String(crop).toLowerCase()));
+    const quantity = document.getElementById('sell-decision-quantity');
+    if (matchingBatch && quantity) quantity.value = matchingBatch.quantity_kg || 1000;
+}
+
+function updateSellStorageCost() {
+    const storage = document.getElementById('sell-decision-storage')?.value;
+    const cost = document.getElementById('sell-decision-storage-cost');
+    if (!cost || Number(cost.value) > 0) return;
+    cost.value = { none: 0, farm: 100, godown: 250, cold: 600 }[storage] ?? 0;
+}
+
+async function runSellDecision() {
+    const resultEl = document.getElementById('sell-decision-result');
+    const button = document.getElementById('sell-decision-button');
+    if (!resultEl || !button) return;
+    const crop = document.getElementById('sell-decision-crop')?.value || 'Wheat';
+    const quantity = parseFloat(document.getElementById('sell-decision-quantity')?.value) || 0;
+    const storageType = document.getElementById('sell-decision-storage')?.value || 'none';
+    const storageCost = parseFloat(document.getElementById('sell-decision-storage-cost')?.value) || 0;
+    const waitDays = parseInt(document.getElementById('sell-decision-days')?.value, 10) || 7;
+    button.disabled = true;
+    resultEl.className = 'sell-decision-result';
+    resultEl.innerHTML = `<p>${t('sellLoading')}</p>`;
+    let storageFacilities = [];
+    const latitude = Number(farmerProfile?.latitude);
+    const longitude = Number(farmerProfile?.longitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        try {
+            const storageResponse = await fetch(`/api/storage/search?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`);
+            if (storageResponse.ok) storageFacilities = (await storageResponse.json()).facilities || [];
+        } catch (error) {
+            console.warn('Storage availability check failed:', error);
+        }
+    }
+    try {
+        const response = await fetch('/api/market/sell-decision', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lang: currentLang, crop, quantity_kg: quantity, storage_type: storageType, storage_cost_per_day: storageCost, wait_days: waitDays, market_records: mandiRecordsCache, weather: weatherCache?.data || {}, storage_facilities: storageFacilities })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || t('sellError'));
+        renderSellDecision(data.result);
+    } catch (error) {
+        resultEl.className = 'sell-decision-result wait';
+        resultEl.innerHTML = `<p>${error.message || t('sellError')}</p>`;
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function renderSellDecision(result) {
+    const resultEl = document.getElementById('sell-decision-result');
+    if (!resultEl) return;
+    const isWait = result.decision === 'WAIT';
+    const money = value => `₹ ${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    resultEl.className = `sell-decision-result ${isWait ? 'wait' : 'sell-now'}`;
+    resultEl.innerHTML = `
+        <h4>${isWait ? '⏳' : '✅'} ${isWait ? t('wait') : t('sellNow')}</h4>
+        <p>${escapeSellText(result.reason)}</p>
+        <div class="sell-decision-grid">
+            <div class="sell-decision-metric"><span>${t('currentPrice')}</span><strong>${money(result.current_price_per_kg)} / kg</strong></div>
+            <div class="sell-decision-metric"><span>${t('nearbyPrice')}</span><strong>${money(result.best_nearby_price_per_kg)} / kg</strong></div>
+            <div class="sell-decision-metric"><span>${t('trend')}</span><strong>${escapeSellText(result.trend_label)} (${Number(result.trend_percent || 0).toFixed(1)}%)</strong></div>
+            <div class="sell-decision-metric"><span>${t('storageCost')}</span><strong>${money(result.storage_cost_total)}</strong></div>
+            <div class="sell-decision-metric"><span>${t('volume')}</span><strong>${Number(result.expected_harvest_volume_kg || 0).toLocaleString()} kg</strong></div>
+            <div class="sell-decision-metric"><span>${t('weatherRisk')}</span><strong>${result.weather_risk ? t('available') : t('unavailable')}</strong></div>
+            <div class="sell-decision-metric"><span>${t('storage')}</span><strong>${result.storage_available ? t('available') : t('unavailable')}</strong></div>
+            <div class="sell-decision-metric"><span>${t('records')}</span><strong>${result.market_records_count || result.storage_facilities || 0}</strong></div>
+        </div>
+        <p class="sell-decision-note">${result.source === 'ai' ? (currentLang === 'hi' ? 'एआई सहायता से तैयार सुझाव।' : 'AI-assisted recommendation.') : (currentLang === 'hi' ? 'उपलब्ध लाइव संकेतों पर आधारित नियम-सुझाव।' : 'Rule-based recommendation using the available live signals.')}</p>`;
+}
+
+function escapeSellText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
 }
 
 // ============================================================

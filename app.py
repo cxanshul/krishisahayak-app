@@ -7,6 +7,7 @@ from functools import wraps
 from io import BytesIO
 from datetime import datetime, date
 import time
+from urllib.parse import quote
 
 from PIL import Image
 from flask import Flask, render_template, request, jsonify, redirect, session, url_for
@@ -56,6 +57,7 @@ ADMIN_EMAILS = {
 }
 
 ACCUWEATHER_API_KEY = env_value("ACCUWEATHER_API_KEY")
+TOMTOM_API_KEY = env_value("TOMTOM_API_KEY")
 ACCUWEATHER_BASE_URL = "https://dataservice.accuweather.com"
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
@@ -695,6 +697,74 @@ Return plain text only, with no JSON, markdown, or preamble.
 
     return jsonify({"success": True, "suggestion": suggestion or fallback, "source": "ai" if suggestion else "rule_based"})
 
+def search_tomtom_storage(latitude, longitude):
+    """Search nearby storage facilities through TomTom's Places Search API."""
+    if not TOMTOM_API_KEY:
+        app.logger.warning("TomTom storage search failed: TOMTOM_API_KEY is not configured")
+        return []
+
+    queries = ("cold storage", "warehouse", "godown", "grain storage", "agricultural storage")
+    places = []
+    seen = set()
+    for query in queries:
+        try:
+            url = f"https://api.tomtom.com/search/2/search/{quote(query)}.json"
+            response = requests.get(
+                url,
+                params={
+                    "key": TOMTOM_API_KEY,
+                    "lat": latitude,
+                    "lon": longitude,
+                    "radius": 100000,
+                    "limit": 20,
+                    "countrySet": "IN",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            for result in response.json().get("results", []):
+                place_id = result.get("id")
+                position = result.get("position", {})
+                place_lat = safe_float(position.get("lat"), None)
+                place_lon = safe_float(position.get("lon"), None)
+                if not place_id or place_id in seen or place_lat is None or place_lon is None:
+                    continue
+                seen.add(place_id)
+                places.append({
+                    "place_id": place_id,
+                    "name": result.get("poi", {}).get("name") or "Storage facility",
+                    "formatted_address": result.get("address", {}).get("freeformAddress") or "Location details not listed",
+                    "lat": place_lat,
+                    "lng": place_lon,
+                    "source": "TomTom",
+                    "distance_km": haversine_distance_km(latitude, longitude, place_lat, place_lon),
+                })
+        except (requests.RequestException, ValueError, TypeError) as error:
+            app.logger.warning("TomTom storage search failed for %s: %s", query, error)
+
+    places.sort(key=lambda place: place["distance_km"])
+    return places
+
+
+@app.route("/api/storage/search-tomtom", methods=["GET"])
+@require_auth
+def search_storage_tomtom():
+    latitude = safe_float(request.args.get("latitude"), None)
+    longitude = safe_float(request.args.get("longitude"), None)
+    if latitude is None or longitude is None:
+        return jsonify({"success": False, "error": "latitude and longitude are required."}), 400
+    if not (
+        INDIA_BOUNDS["min_lat"] <= latitude <= INDIA_BOUNDS["max_lat"]
+        and INDIA_BOUNDS["min_lon"] <= longitude <= INDIA_BOUNDS["max_lon"]
+    ):
+        return jsonify({"success": False, "error": "Coordinates must be within India."}), 400
+    try:
+        return jsonify({"success": True, "places": search_tomtom_storage(latitude, longitude)})
+    except Exception as error:
+        app.logger.warning("TomTom storage route failed: %s", error)
+        return jsonify({"success": False, "error": "TomTom storage search failed."}), 502
+
+
 @app.route("/api/storage/search", methods=["GET"])
 @require_auth
 def search_storage_facilities():
@@ -1252,6 +1322,89 @@ def get_mandi_rates():
         MANDI_CACHE[cache_key] = {"stored_at": time.time(), "data": response_data}
     return jsonify(response_data)
 
+@app.route("/api/market/sell-decision", methods=["POST"])
+@require_auth
+def sell_decision():
+    """Recommend selling now or waiting using market, weather, volume, and storage signals."""
+    try:
+        data = request.json or {}
+        crop = str(data.get("crop", "")).strip() or "Unknown crop"
+        lang = "hi" if data.get("lang") == "hi" else "en"
+        quantity_kg = max(0.0, safe_float(data.get("quantity_kg")))
+        wait_days = max(1, min(30, int(safe_float(data.get("wait_days"), 7))))
+        storage_cost_per_day = max(0.0, safe_float(data.get("storage_cost_per_day")))
+        storage_type = str(data.get("storage_type", "none"))
+        market_records = data.get("market_records") if isinstance(data.get("market_records"), list) else []
+        weather = data.get("weather") if isinstance(data.get("weather"), dict) else {}
+        storage_facilities = data.get("storage_facilities") if isinstance(data.get("storage_facilities"), list) else []
+        crop_records = [record for record in market_records if crop.lower() in str(record.get("commodity", "")).lower()]
+        crop_records = crop_records or market_records
+        prices = [safe_float(record.get("modal_price")) / 100 for record in crop_records if safe_float(record.get("modal_price")) > 0]
+        current_price = sum(prices) / len(prices) if prices else 0.0
+        best_nearby_price = max(prices, default=0.0)
+        dated = {}
+        for record in crop_records:
+            price = safe_float(record.get("modal_price")) / 100
+            arrival_date = str(record.get("arrival_date", ""))[:10]
+            if price > 0 and arrival_date:
+                dated.setdefault(arrival_date, []).append(price)
+        dated_prices = [(key, sum(values) / len(values)) for key, values in dated.items()]
+        dated_prices.sort()
+        trend_percent = 0.0
+        trend_label = "वर्तमान बाजार फीड में ऐतिहासिक रुझान उपलब्ध नहीं है" if lang == "hi" else "Historical trend unavailable from the current market feed"
+        if len(dated_prices) >= 2 and dated_prices[0][1] > 0:
+            trend_percent = ((dated_prices[-1][1] - dated_prices[0][1]) / dated_prices[0][1]) * 100
+            trend_label = ("बढ़ता हुआ" if trend_percent > 1 else "गिरता हुआ" if trend_percent < -1 else "स्थिर") if lang == "hi" else ("Rising" if trend_percent > 1 else "Falling" if trend_percent < -1 else "Stable")
+
+        current = weather.get("current") if isinstance(weather.get("current"), dict) else {}
+        forecast = weather.get("forecast") if isinstance(weather.get("forecast"), list) else []
+        rain_probability = max([safe_float(day.get("rain_probability_percent")) for day in forecast[:2] if isinstance(day, dict)] or [0])
+        weather_risk = bool(rain_probability >= 60 or any(alert.get("level") == "high" for alert in weather.get("alerts", []) if isinstance(alert, dict)))
+        storage_available = bool(storage_facilities) or storage_type != "none"
+        storage_total = storage_cost_per_day * wait_days
+        expected_price = current_price * (1 + max(-0.08, min(0.08, trend_percent / 100))) if current_price else 0
+        expected_gain = max(0, expected_price - current_price) * quantity_kg
+        spoilage_penalty = quantity_kg * current_price * (0.04 if weather_risk else 0.01) if current_price else 0
+        wait_cost = storage_total + spoilage_penalty
+        decision = "SELL_NOW"
+        if current_price and storage_available and trend_percent > 1 and expected_gain > wait_cost:
+            decision = "WAIT"
+        elif weather_risk or not storage_available or trend_percent <= -1:
+            decision = "SELL_NOW"
+        fallback_reason = (
+            f"Current average is ₹{current_price:.2f}/kg across {len(crop_records)} market records. "
+            f"The dated signal is {trend_label.lower()}; waiting {wait_days} days could add about ₹{expected_gain:,.0f}, "
+            f"against estimated storage and spoilage costs of ₹{wait_cost:,.0f}."
+        )
+        result = {
+            "decision": decision, "decision_label": (("रुकें और निगरानी करें" if lang == "hi" else "Wait and monitor") if decision == "WAIT" else ("अभी बेचें" if lang == "hi" else "Sell now")),
+            "reason": fallback_reason, "current_price_per_kg": round(current_price, 2),
+            "best_nearby_price_per_kg": round(best_nearby_price, 2), "trend_percent": round(trend_percent, 2),
+            "trend_label": trend_label, "expected_price_per_kg": round(expected_price, 2),
+            "expected_harvest_volume_kg": round(quantity_kg, 2), "storage_available": storage_available,
+            "storage_facilities": len(storage_facilities), "market_records_count": len(crop_records), "storage_cost_total": round(storage_total, 2),
+            "weather_risk": weather_risk, "rain_probability": round(rain_probability, 0), "source": "rule_based"
+        }
+        if gemini_client or SECONDARY_AI_KEY:
+            prompt = f"""You are a cautious Indian agricultural market advisor. Decide SELL_NOW or WAIT using only the supplied signals. Never guarantee a price. Respond in {'Hindi' if lang == 'hi' else 'English'}. Return valid JSON with keys decision, decision_label, reason, confidence. Keep reason to 2 short sentences.\nSignals: {json.dumps(result | {'crop': crop, 'storage_type': storage_type, 'weather': weather, 'market_records': crop_records[:20]}, ensure_ascii=False)}"""
+            ai_text = None
+            try:
+                if gemini_client:
+                    response = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=[prompt], config=types.GenerateContentConfig(response_mime_type="application/json", max_output_tokens=220))
+                    ai_text = response.text
+                elif SECONDARY_AI_KEY:
+                    ai_text = secondary_ai_response([prompt], json_mode=True, max_tokens=220)
+                ai_result = json.loads(ai_text or "{}")
+                if ai_result.get("decision") in {"SELL_NOW", "WAIT"}:
+                    result.update({key: ai_result[key] for key in ("decision", "decision_label", "reason") if ai_result.get(key)})
+                    result["source"] = "ai"
+                    result["confidence"] = ai_result.get("confidence", "medium")
+            except (Exception, json.JSONDecodeError) as error:
+                app.logger.warning("Sell decision AI failed; using rules: %s", error)
+        return jsonify({"success": True, "result": result})
+    except (TypeError, ValueError) as error:
+        return jsonify({"success": False, "error": f"Could not calculate sell timing: {error}"}), 400
+
 # ============================================================
 # PRE-COST / PRODUCTION ESTIMATE API
 # ============================================================
@@ -1502,4 +1655,4 @@ if __name__ == "__main__":
     print(f"Gemini Model: {GEMINI_MODEL}")
     print(f"Supabase Database Connected: {'YES' if supabase else 'NO'}")
     print("================================================")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)

@@ -1579,3 +1579,18 @@ html::before {
     margin: 18px 4px 6px;
     font-weight: 600;
 }
+
+.sell-decision-panel { border-top: 4px solid var(--turmeric); }
+.sell-decision-inputs { margin-top: 8px; }
+.sell-decision-result { margin-top: 20px; border: 1px solid var(--border-ledger); background: #fff; padding: 18px; }
+.sell-decision-result.hidden { display: none; }
+.sell-decision-result.sell-now { border-color: var(--leaf-green); background: #f2f8ee; }
+.sell-decision-result.wait { border-color: var(--turmeric); background: #fff9e7; }
+.sell-decision-result h4 { font: 700 28px var(--font-serif); margin-bottom: 8px; }
+.sell-decision-result p { color: var(--text-muted); font-size: 13px; line-height: 1.55; }
+.sell-decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 16px; }
+.sell-decision-metric { border: 1px solid var(--border-ledger); padding: 11px; background: rgba(255,255,255,.7); }
+.sell-decision-metric span { display: block; color: var(--text-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.sell-decision-metric strong { display: block; margin-top: 5px; font: 700 18px var(--font-serif); }
+.sell-decision-note { margin-top: 14px; }
+@media (max-width: 760px) { .sell-decision-grid { grid-template-columns: 1fr 1fr; } }
