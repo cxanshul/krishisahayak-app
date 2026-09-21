@@ -70,6 +70,7 @@ TWILIO_WHATSAPP_ALERT_CONTENT_SID = env_value("TWILIO_WHATSAPP_ALERT_CONTENT_SID
 WAPPFLY_API_TOKEN = env_value("WAPPFLY_API_TOKEN")
 WAPPFLY_SEND_URL = "https://wappfly.com/api/messages/send"
 BHUVAN_API_TOKEN = env_value("BHUVAN_API_TOKEN") or "4693c1e682a873ca92837b3e63047c927f664642"
+BHUVAN_API_URL = env_value("BHUVAN_API_URL", "https://bhuvan-app1.nrsc.gov.in/api/lulc/curl_aoi.php")
 OTP_TTL_SECONDS = 300
 WHATSAPP_COOLDOWN_SECONDS = 24 * 3600  # 24-hour rate limit between WhatsApp updates for any batch
 WHATSAPP_ALERT_LOG = {}  # In-memory alert log: (farmer_id, batch_id) -> float(timestamp)
@@ -1941,7 +1942,7 @@ def fetch_bhuvan_lulc(latitude, longitude, area_acres=2.5):
 
         delta = max(0.003, min(0.025, (area ** 0.5) * 0.003))
         poly = f"POLYGON(({lon - delta:.6f} {lat - delta:.6f},{lon + delta:.6f} {lat - delta:.6f},{lon + delta:.6f} {lat + delta:.6f},{lon - delta:.6f} {lat + delta:.6f},{lon - delta:.6f} {lat - delta:.6f}))"
-        url = "https://bhuvan-app1.nrsc.gov.in/api/lulc/curl_aoi.php"
+        url = BHUVAN_API_URL
         params = {"geom": poly, "token": BHUVAN_API_TOKEN}
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         res = requests.get(url, params=params, headers=headers, timeout=10.0)
